@@ -1,0 +1,461 @@
+# @toony1908/stacks-passkey-wallet — Full Reference
+
+Version: 0.1.0. License: MIT. Source: https://github.com/tony1908/stacks-passkey-wallet
+Docs site: https://tony1908.github.io/stacks-passkey-wallet/
+
+## 1. Overview
+
+`@toony1908/stacks-passkey-wallet` is a passkey (WebAuthn PRF)-derived Stacks hot-wallet SDK for web and React Native, sharing one framework-agnostic core. No browser extension to install, no seed phrase to write down at setup — the wallet's key material is derived on demand from the user's platform passkey (Face ID / Touch ID / Windows Hello / Android biometrics), used once per operation, and discarded.
+
+STX-only today (no SIP-10 tokens, NFTs, or arbitrary contract calls out of the box) — everything else is reachable through the `withWalletKey` escape hatch, which hands a one-shot `{ privateKey, address, mnemonic }` to your own code.
+
+### The three packages
+
+| Package | What it is |
+| --- | --- |
+| `@toony1908/stacks-passkey-core` | Framework-agnostic shared primitives: config resolution, input validation, BIP39/BIP44 key derivation from raw entropy, Hiro API balance/transaction fetching. No React, no DOM, no WebAuthn. |
+| `@toony1908/stacks-passkey-react` | Web SDK: WebAuthn PRF passkeys, a React provider/hooks, and a DOM `WalletButton`/`WalletDrawer` UI. |
+| `@toony1908/stacks-passkey-react-native` | React Native SDK: native passkeys via `react-native-passkeys` (PRF), the same provider/hooks, and an RN `WalletButton`/`WalletDrawer` UI. |
+
+You normally install only one of the platform packages — each pulls in `@toony1908/stacks-passkey-core` automatically.
+
+```sh
+# Web app
+pnpm add @toony1908/stacks-passkey-react
+
+# React Native / Expo app
+pnpm add @toony1908/stacks-passkey-react-native
+pnpm add react-native-get-random-values
+
+# Only if you're integrating a third platform directly on top of core
+pnpm add @toony1908/stacks-passkey-core
+```
+
+Peer dependencies (install in your own app):
+
+| Package | Web | React Native |
+| --- | --- | --- |
+| `react` | `>=18` | `>=18` |
+| `react-dom` | `>=18` | — |
+| `react-native` | — | `>=0.71` |
+| `react-native-passkeys` | — | `>=0.3` |
+| `@react-native-async-storage/async-storage` | — | `>=1` |
+| `react-native-svg` | — | `>=13` |
+| `@stacks/transactions` | `>=7` | `>=7` |
+| `@stacks/wallet-sdk` | `>=7` | `>=7` |
+
+`@scure/bip39` is a regular (bundled) dependency of core, not a peer dependency.
+
+## 2. Architecture & security model
+
+Each platform does its own passkey/PRF dance, then hands 32 bytes of PRF entropy to the same shared core logic:
+
+```
+   Web app                          React Native app
+     |  WebAuthn PRF                     |  native passkey PRF
+     |  (navigator.credentials)          |  (react-native-passkeys)
+     v                                   v
+  @toony1908/stacks-passkey-react     @toony1908/stacks-passkey-react-native
+     |                                   |
+     +----------------+------------------+
+                       |  same 32 bytes of PRF entropy
+                       v
+          @toony1908/stacks-passkey-core
+     BIP39 mnemonic -> BIP32 derive (m/44'/5757'/0'/0) -> sign
+                       |
+                       v
+              Hiro API (balance, tx history, broadcast)
+```
+
+**Per-operation derivation, not a cached session.** The signing key is never generated once and held — it's derived fresh, used, and thrown away for every single operation, via `withWalletKey(credentialId, config, fn)`:
+
+```ts
+export async function withWalletKey<T>(credentialId, cfg, fn): Promise<T> {
+  assertSecureContext();
+  const entropy = await derivePrfEntropy(credentialId, cfg); // triggers FaceID/fingerprint
+  try {
+    const wallet = await walletFromEntropy(entropy, cfg.network);
+    return await fn(wallet); // key exists only inside this call
+  } finally {
+    entropy.fill(0); // zeroed even if fn throws
+  }
+}
+```
+
+- The private key/mnemonic is **never cached in memory across operations** — not in a module variable, React state, a ref, or context. Only *public* data is ever held: `{ credentialId, addresses: { mainnet, testnet } }`.
+- Every send, sign, or reveal derives the key from scratch, which means every one of those triggers a fresh biometric prompt and keeps the key's in-memory lifetime to a single `withWalletKey` call.
+- The raw entropy `Uint8Array` is explicitly zeroed (`entropy.fill(0)`) in a `finally` block after every operation.
+- One passkey derives one private key, which has both a mainnet (`SP…`) and testnet (`ST…`) address (same key, different network version byte). Both addresses are derived together at `connect()`/`reconnect()` time (a single passkey prompt) and stored together, so the active network can flip at runtime via `setNetwork` with **no new passkey prompt**.
+
+**What's persisted.** Storage (`localStorage` on web, `AsyncStorage` on React Native, both swappable) holds exactly `StoredWallet`: `{ credentialId, addresses: { mainnet, testnet } }` — public data, never a key, mnemonic, or entropy.
+
+**Fixed secure defaults.** `residentKey: 'required'` and `userVerification: 'required'` are hardcoded in the WebAuthn call options — **not configurable**. They're what make the wallet phishing- and passkey-loss resistant (a discoverable credential that always demands biometric/PIN verification).
+
+**Honest JavaScript caveat.** The *entropy bytes* are zeroable — the derived **mnemonic and private-key strings are not**. JS strings are immutable, so once the mnemonic/private key exists as a string, it lives until garbage collected; there's no reliable way to scrub it from the heap in the interim. An XSS payload executing *while an operation is in flight* (the split second between prompt approval and `finally`) could theoretically still read that key. Per-operation derivation drastically shrinks this window (milliseconds per user action, instead of the app's entire session) — it does **not** eliminate it. **Treat this as a hot wallet: do not use it to hold large or long-term balances.**
+
+**Phishing resistance.** WebAuthn binds the passkey to the relying-party ID (`rpId`, defaulting to your origin). A different domain — even a convincing phishing clone — cannot invoke your passkey or derive your wallet's key material.
+
+**Recommendations for consumers embedding this SDK:**
+- Serve your app over HTTPS in production (required anyway).
+- Ship a strict Content-Security-Policy — this SDK's own attack surface (XSS reading key material mid-operation) is exactly what a good CSP mitigates.
+- Pin your `@stacks/transactions` and `@stacks/wallet-sdk` peer dependency versions — duplicate copies in your dependency tree can cause subtle serialization/signing bugs.
+- Audit your full dependency tree periodically.
+- Remember the `prfSalt` note in section 4: it **is** the wallet's identity. Changing it silently gives existing users a different (empty) wallet on their next connect.
+
+## 3. Quick start
+
+### Web
+
+Requirements: a **secure context** (HTTPS in production, or `localhost` in dev), and a browser/authenticator that supports the **WebAuthn PRF extension** (recent Safari/Chrome with a platform passkey). If the browser lacks WebAuthn entirely, `connect()`/`reconnect()` throw `PASSKEY_UNSUPPORTED`; if the authenticator doesn't return PRF results, `connect()` throws `PRF_UNSUPPORTED`.
+
+```tsx
+import { StacksPasskeyProvider, WalletButton } from '@toony1908/stacks-passkey-react';
+
+export function App() {
+  return (
+    <StacksPasskeyProvider appName="My App" network="testnet">
+      <WalletButton />
+    </StacksPasskeyProvider>
+  );
+}
+```
+
+`StacksPasskeyProviderProps` is `PasskeyWalletConfig & { children: ReactNode }`.
+
+Headless (hooks only, no built-in UI):
+
+```tsx
+import { useStacksPasskeyWallet, useStxBalance } from '@toony1908/stacks-passkey-react';
+
+function SendPanel() {
+  const { isConnected, connect, address, sendStx } = useStacksPasskeyWallet();
+  const { balanceMicroStx, isLoading } = useStxBalance();
+
+  if (!isConnected) {
+    return <button onClick={() => connect()}>Connect wallet</button>;
+  }
+
+  async function handleSend() {
+    // amount is in microSTX (1 STX = 1_000_000n microSTX)
+    const txid = await sendStx({ recipient: 'ST2JHG...', amount: 1_000_000n });
+    console.log('broadcast:', txid);
+  }
+
+  return (
+    <div>
+      <p>{address}</p>
+      <p>{isLoading ? 'Loading…' : `${balanceMicroStx} microSTX`}</p>
+      <button onClick={handleSend}>Send 1 STX</button>
+    </div>
+  );
+}
+```
+
+### React Native
+
+Prerequisites (all required before wiring up passkeys):
+
+1. **Install the `crypto.getRandomValues` polyfill as the very first import in your app's entry point** (`index.js`/`App.tsx`), above every other import:
+
+   ```ts
+   import 'react-native-get-random-values';
+   ```
+
+   `@stacks/transactions`/`@stacks/wallet-sdk` (and this package's own code) call `crypto.getRandomValues(...)`, which Hermes/React Native does not provide by default. This is deliberately not done for you inside the library, to avoid silently shadowing an app's own polyfill setup or double-running it.
+
+2. **You need a custom dev client or a bare build — this does not work in Expo Go.** `react-native-passkeys` is a native module (it links native iOS/Android passkey APIs). Use an EAS Build custom dev client, or a bare workflow with `pod install` (iOS) / a Gradle sync (Android).
+
+3. **iOS 15+ / Android API 28+, with associated domains / `assetlinks.json` configured for your passkey relying-party.** Native passkeys require your app to prove domain ownership — Apple's associated domains (`apple-app-site-association`) and Android's Digital Asset Links (`assetlinks.json`), served from a domain that becomes your `rpId`. This is native-project configuration, not something this SDK can do for you — follow `react-native-passkeys`'s native setup docs for the exact entitlements/manifest changes.
+
+```tsx
+import { StacksPasskeyProvider, WalletButton } from '@toony1908/stacks-passkey-react-native';
+
+export default function App() {
+  return (
+    <StacksPasskeyProvider appName="My App" network="testnet">
+      <WalletButton />
+    </StacksPasskeyProvider>
+  );
+}
+```
+
+`StacksPasskeyProviderProps` here is `Omit<PasskeyWalletConfig, 'storage'>` — `storage` is a compile error on RN because storage defaults to AsyncStorage via a separate internal module (see section 4, Storage).
+
+Headless:
+
+```tsx
+import { useStacksPasskeyWallet, useStxBalance } from '@toony1908/stacks-passkey-react-native';
+import { Text, Button } from 'react-native';
+
+function SendPanel() {
+  const { isConnected, connect, address, sendStx } = useStacksPasskeyWallet();
+  const { balanceMicroStx, isLoading } = useStxBalance();
+
+  if (!isConnected) {
+    return <Button title="Connect wallet" onPress={() => connect()} />;
+  }
+
+  async function handleSend() {
+    const txid = await sendStx({ recipient: 'ST2JHG...', amount: 1_000_000n });
+    console.log('broadcast:', txid);
+  }
+
+  return (
+    <>
+      <Text>{address}</Text>
+      <Text>{isLoading ? 'Loading…' : `${balanceMicroStx} microSTX`}</Text>
+      <Button title="Send 1 STX" onPress={handleSend} />
+    </>
+  );
+}
+```
+
+RN-specific behavior notes:
+- **Loading stored wallet state is asynchronous.** `useStacksPasskeyWallet()` exposes `isInitializing: boolean` — `true` from mount until the initial AsyncStorage read resolves, then `false` for the rest of the session. Gate a "connect" call-to-action on `!isInitializing` so a returning user with an already-linked wallet doesn't flash a "disconnected" button for one frame. Web has no equivalent (its `localStorage` read is synchronous).
+- **`colorScheme: 'auto'` reads the live `useColorScheme()` value**, not just the value at mount, so the theme updates if the user flips their OS appearance setting while the app is open.
+
+## 4. Full `PasskeyWalletConfig` reference
+
+`PasskeyWalletConfig` is defined in `packages/core/src/config.ts` and is the exact prop shape of `StacksPasskeyProvider` on every platform (React Native omits `storage`), and the argument to `resolveConfig`. Every field is optional except `appName` and `network`.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `appName` | `string` | *(required)* | Shown in the WebAuthn `rp.name` prompt. Also seeds the default `userName`, `userDisplayName`, `prfSalt`, and `storageKey`. |
+| `network` | `'mainnet' \| 'testnet'` | *(required)* | The **initial** active network. The provider tracks the active network as runtime state via `setNetwork`, so this only seeds it. |
+| `rpId` | `string` | unset — browser/platform resolves current origin | WebAuthn relying-party id (`rp.id`). Leave unset unless passkeys must work across subdomains of a single registrable domain (web), or for the domain-based rpId React Native native passkeys require. |
+| `userName` | `string` | `appName` | WebAuthn `user.name` — the account label shown in the OS passkey picker/UI. |
+| `userDisplayName` | `string` | `appName` | WebAuthn `user.displayName` — the friendlier label some platforms show alongside `userName`. |
+| `prfSalt` | `string` | `` `${appName}-stacks-passkey-v1` `` | PRF extension salt — the "password" that, together with the passkey, determines the derived wallet's entropy. **This is the wallet's identity.** Changing it after users have connected derives a DIFFERENT wallet for them; there's no migration path back. It's also the only isolation boundary between apps/builds sharing an `rpId` (e.g. dev/staging/prod on one domain) — pin it explicitly and differently per environment if that's a possibility. |
+| `webauthnTimeoutMs` | `number` | unset — browser's own timeout | WebAuthn `publicKey.timeout` in milliseconds, applied to registration, PRF derivation, and reconnect assertions. |
+| `apiUrls` | `Partial<Record<'mainnet' \| 'testnet', string>>` | `{}` | Per-network Hiro API host override, e.g. a self-hosted Stacks node. Any network left unset falls back to the public default (`https://api.hiro.so` / `https://api.testnet.hiro.so`). |
+| `explorer` | `{ txUrl?, addressUrl? }` | unset builders fall back to `explorer.stacks.co` | Block-explorer link builder overrides used by the UI layer (activity rows, address link, post-send success notice). |
+| `accountIndex` | `number` | `0` | Which BIP44 account (from the single passkey-derived wallet) to use. Change it to derive a different account from the same passkey without a second passkey. |
+| `feeBufferMicroStx` | `bigint` | `3_000n` | UX safety margin subtracted from the balance when checking/pre-filling a "send max" amount, so a full-balance send doesn't fail at broadcast for lack of fee headroom. |
+| `maxFeeMicroStx` | `bigint` | `1_000_000n` (1 STX) | Hard ceiling on the network fee `sendStx`/`signStxTransfer` will sign. If the API's estimated fee exceeds this, the SDK throws `FEE_TOO_HIGH` instead of silently signing it. Not clamped down to this value — see section 8. |
+| `pollIntervalMs` | `number` | `30000` | Balance/transaction poll interval in milliseconds (used by `useStxBalance`/`useStxTransactions`). |
+| `transactionLimit` | `number` | `20` | Default page size for `getStxTransactions`/`useStxTransactions` when no per-call `limit` is given. |
+| `storage` | `WalletStorage` (`{ get, set, remove }`, synchronous) | `undefined` → internal `localStorage`-backed store with an in-memory fallback (web only — omitted entirely from RN's provider props) | Storage backend for the persisted `{ credentialId, addresses }` pair. On React Native this field doesn't exist on `StacksPasskeyProviderProps`; storage there is always AsyncStorage via a separate internal module (`src/storage.ts`) — re-implement `loadStoredWallet`/`saveStoredWallet`/`clearStoredWallet` there to swap it. |
+| `storageKey` | `string` | `` `stacks-passkey-wallet:${appName}` `` | Storage key for the persisted wallet. Only relevant if you run multiple wallet instances in one origin. |
+| `colorScheme` | `'dark' \| 'light' \| 'auto'` | `'dark'` | UI color scheme for the built-in components. `'auto'` follows the OS/browser setting (`prefers-color-scheme` on web, `useColorScheme()` on native). |
+
+`ResolvedConfig` is the same shape with every optional field filled in by `resolveConfig` (defaults as above), `explorer` guaranteed to have both builders, and `colorScheme` guaranteed present.
+
+Fields NOT in `PasskeyWalletConfig`, listed for clarity since they're easy to assume exist: there is no `pollInterval` (it's `pollIntervalMs`), no `theme` field on the config itself (theme overrides are a separate `theme` prop on `WalletButton`/`WalletDrawer`, RN only), and `residentKey`/`userVerification` are not configurable at all (fixed to `'required'`).
+
+## 5. API reference
+
+### `@toony1908/stacks-passkey-react` (web, main entry)
+
+| Export | Signature | Description |
+| --- | --- | --- |
+| `StacksPasskeyProvider` | `(props: PasskeyWalletConfig & { children: ReactNode }) => JSX.Element` | Context provider; wrap your app (or the subtree needing wallet access). |
+| `useStacksPasskeyWallet` | `(): StacksPasskeyContextValue` | The main hook. Returns: `isSupported: boolean`, `isConnected: boolean`, `isConnecting: boolean`, `address?: string`, `network: StacksNetwork`, `setNetwork(network): void`, `config: ResolvedConfig`, `resolvedColorScheme: ResolvedColorScheme`, `connect(): Promise<void>`, `reconnect(): Promise<void>`, `disconnect(): Promise<void>`, `sendStx(args: SendStxArgs): Promise<string>`, `signStxTransfer(args: SendStxArgs): Promise<string>`, `withWalletKey<T>(fn): Promise<T>`, `revealMnemonic(): Promise<string>`. Throws if called outside a `StacksPasskeyProvider`. `resolvedColorScheme` is `config.colorScheme` with `'auto'` resolved to the live OS reading. |
+| `useStxBalance` | `(): { balanceMicroStx?: bigint; isLoading: boolean; error?: Error; refetch(): void }` | **Spendable** STX balance in microSTX (total minus locked/stacked). Fetches on connect, polls every `pollIntervalMs`, and on `refetch()`. |
+| `useStxTransactions` | `(opts?: { limit?: number }): { transactions?: WalletTx[]; isLoading: boolean; error?: Error; refetch(): void }` | Merged pending (mempool) + confirmed transfers, pending first. Polls on the same interval. |
+| `WalletButton` | `(props: WalletButtonProps) => JSX.Element` | See section 6 for full props. Self-contained connect button; once connected, renders its own `WalletDrawer`. While disconnected, also renders a "Use an existing passkey" link that calls `reconnect()` — for restoring a wallet after storage loss without creating a new passkey. |
+| `WalletDrawer` | `(props: WalletDrawerProps) => JSX.Element \| null` | `{ open: boolean; onClose(): void; onSuccess?(txid: string): void; onError?(e: unknown): void }`. The slide-over panel (home/send/receive/activity/recovery), portaled to `document.body`. Render this yourself instead of `WalletButton` if you need `onSuccess` or your own trigger UI. |
+| `injectStyles` | `() => void` | Injects the SDK's `<style>` tag once per document. SSR-safe no-op without `document`, idempotent. `WalletButton`/`WalletDrawer` already call it on mount. |
+| `PasskeyWalletError` | `class extends Error { code: WalletErrorCode }` | The SDK's error type. |
+| `isPasskeyWalletError` | `(e: unknown) => e is PasskeyWalletError` | Type guard. |
+| `formatMicroStx` | `(amount: bigint) => string` | `1_500_000n → "1.500000 STX"`. Handles negatives: `-1_500_000n → "-1.500000 STX"`. |
+| `parseStxToMicroStx` | `(input: string) => bigint \| null` | Inverse of the above; `null` on invalid input or more than 6 decimal places. |
+| `truncateAddress`, `explorerTxUrl`, `explorerAddressUrl`, `getAddressError`, `getAmountError`, `getMemoError`, `relativeTime` | — | Formatting/validation helpers `WalletButton`/`WalletDrawer` use internally, exported for building a custom wallet UI (`src/ui/format.ts`). |
+| `VERSION` | `string` | The SDK's version string. |
+
+Types re-exported: `StacksPasskeyProviderProps`, `StacksPasskeyContextValue`, `SendStxArgs` (`{ recipient: string; amount: bigint; memo?: string }`), `WalletButtonProps`, `WalletDrawerProps`, `StacksNetwork`, `PasskeyWalletConfig`, `WalletTx`, `DerivedWallet`, `WalletErrorCode`, `WalletStorage`, `ColorScheme`, `ResolvedColorScheme`.
+
+### `@toony1908/stacks-passkey-react/core` (web, framework-agnostic subpath)
+
+No React import — safe to use from a script, a CLI, or a non-React framework. Also re-exported from the web package's main entry for convenience: `isPasskeySupported`, `withWalletKey`, `deriveWalletAddresses`, `sendStx`, `signStxTransfer`, `loadStoredWallet`, `saveStoredWallet`, `clearStoredWallet`.
+
+| Export | Signature | Description |
+| --- | --- | --- |
+| `resolveConfig` | `(cfg: PasskeyWalletConfig) => ResolvedConfig` | Fills in the defaults from section 4. |
+| `hiroHost` | `(cfg) => string` | Resolves the effective Hiro API base URL. |
+| `isPasskeySupported` | `() => boolean` | `'PublicKeyCredential' in window`. |
+| `registerPasskey` | `(cfg: ResolvedConfig) => Promise<string>` | Creates a new passkey with the PRF extension requested; returns a base64url `credentialId`. Throws `PASSKEY_UNSUPPORTED` (no WebAuthn) or `PRF_UNSUPPORTED` (no PRF results). |
+| `reconnectWallet` | `(cfg: ResolvedConfig) => Promise<{ credentialId: string; addresses: { mainnet: string; testnet: string } }>` | Restores a wallet from an existing resident/discoverable passkey when local storage lost the pair but the passkey still exists. No `allowCredentials`, so the platform surfaces the resident passkey directly; re-derives the identical wallet. Throws `PASSKEY_UNSUPPORTED`/`PRF_UNSUPPORTED`/`PASSKEY_CANCELLED`. |
+| `withWalletKey` | `<T>(credentialId, cfg, fn: (wallet: DerivedWallet) => Promise<T>) => Promise<T>` | The per-operation signing primitive (section 2). `DerivedWallet` is `{ mnemonic, privateKey, address }`. |
+| `deriveWalletAddresses` | `(credentialId, cfg: ResolvedConfig) => Promise<{ mainnet: string; testnet: string }>` | One passkey prompt (via `withWalletKey`), both network addresses. |
+| `addressesFromPrivateKey` | `(privateKey: string) => { mainnet: string; testnet: string }` | Pure helper: one Stacks private key has both a mainnet (`SP…`) and testnet (`ST…`) address (same key, different version byte). |
+| `sendStx` | `(credentialId, cfg, params: SendStxParams) => Promise<string>` | Validates, derives the key, signs an STX transfer, broadcasts it, returns the txid. Throws `BROADCAST_FAILED` on broadcast rejection, or `FEE_TOO_HIGH` if the estimated fee exceeds `cfg.maxFeeMicroStx`. |
+| `signStxTransfer` | `(credentialId, cfg, params: SendStxParams) => Promise<string>` | Same signing/validation (including the fee ceiling), but returns the serialized signed transaction hex and never broadcasts. |
+| `getStxBalance` | `(address, cfg) => Promise<bigint>` | **Spendable** STX balance in microSTX (`balance - locked`, floored at 0; missing `locked` treated as 0). |
+| `getStxTransactions` | `(address, cfg, opts?: { limit?: number }) => Promise<WalletTx[]>` | Pending mempool transfers followed by confirmed ones. |
+| `isValidStacksAddress`, `assertValidRecipient`, `memoByteLength`, `assertValidMemo` | validators | `assertValidRecipient` also checks the address prefix matches the configured network (`SP`/`SM` mainnet, `ST`/`SN` testnet); `assertValidMemo` enforces the 34-byte on-chain memo limit. |
+| `parseStxToMicroStx`, `formatMicroStx` | — | Same as the main entry. |
+| `STX_FEE_BUFFER_MICROSTX` | `bigint` (`3_000n`) | The default value backing `feeBufferMicroStx`. |
+| `defaultStorage`, `getStorage`, `loadStoredWallet`, `saveStoredWallet`, `clearStoredWallet` | storage helpers | Build a custom persistence layer on top of `StoredWallet`. `loadStoredWallet` returns `null` for anything that doesn't match the current shape. |
+| `base64UrlEncode`, `base64UrlDecode` | `(bytes) => string` / `(value) => Uint8Array` | Credential-ID encoding helpers. |
+| `PasskeyWalletError`, `isPasskeyWalletError` | — | Same as the main entry. |
+| `walletFromEntropy` | `(entropy: Uint8Array, network, accountIndex?) => Promise<DerivedWallet>` | 32 bytes of entropy → BIP39 mnemonic → BIP44 account (`m/44'/5757'/0'/0`) → `{ mnemonic, privateKey, address }`. Exported from `@toony1908/stacks-passkey-core`'s barrel for internal cross-package use. |
+
+Note: `derivePrfEntropy` (the function that actually talks to the authenticator) is intentionally **not** exported — only `withWalletKey` may call it, so raw key material can never leak outside a single operation's scope.
+
+### `@toony1908/stacks-passkey-react-native` (main entry)
+
+The public surface mirrors the web package's `/core` entry plus the React layer and RN-specific UI, and additionally re-exports everything from `@toony1908/stacks-passkey-core` directly so a consumer only depends on this one package.
+
+| Export | Description |
+| --- | --- |
+| `StacksPasskeyProvider`, `useStacksPasskeyWallet`, `useStxBalance`, `useStxTransactions` | Same shape and behavior as web's, **plus** `useStacksPasskeyWallet()`'s `isInitializing: boolean` (RN-only — see section 3). |
+| `WalletButton`, `WalletDrawer` | RN equivalents built on `View`/`Pressable`/`Modal`/`TextInput`; accept an optional `theme?: Partial<StacksPasskeyTheme>` prop instead of CSS custom properties. `WalletDrawer` is `{ open, onClose(), onSuccess?(txid), onError?(e), theme? }`. |
+| `defaultTheme`, `lightTheme`, `resolveTheme` | The dark/light theme token sets (`StacksPasskeyTheme`) and the function `WalletButton`/`WalletDrawer` use to pick a base (from `resolvedColorScheme`) and merge a partial `theme` override on top. |
+| `isPasskeySupported`, `withWalletKey`, `deriveWalletAddresses`, `sendStx`, `signStxTransfer` | Non-UI primitives for a custom UI (`passkey.ts`/`session.ts`/`stx.ts`). |
+| `loadStoredWallet`, `saveStoredWallet`, `clearStoredWallet` | AsyncStorage-backed persistence for `{ credentialId, addresses }` (`storage.ts`). |
+| `truncateAddress`, `explorerTxUrl`, `explorerAddressUrl`, `getAddressError`, `getAmountError`, `getMemoError`, `relativeTime`, `chunkAddress` | Formatting/validation helpers (`src/ui/format.ts`). |
+| Everything from `@toony1908/stacks-passkey-core` | `resolveConfig`, `hiroHost`, `defaultExplorerTxUrl`, `defaultExplorerAddressUrl`, `PasskeyWalletError`, `isPasskeyWalletError`, `formatMicroStx`, `parseStxToMicroStx`, `isValidStacksAddress`, `assertValidRecipient`, `memoByteLength`, `base64UrlEncode`, `base64UrlDecode`, `STX_FEE_BUFFER_MICROSTX`, `getStxBalance`, `getStxTransactions`, re-exported directly. |
+
+`useStacksPasskeyWallet()` on React Native returns the same fields as web plus `isInitializing`: `isSupported`, `isConnected`, `isConnecting`, `isInitializing`, `address?`, `network`, `setNetwork(network)`, `config`, `resolvedColorScheme`, `connect()`, `reconnect()`, `disconnect()`, `sendStx(args)`, `signStxTransfer(args)`, `withWalletKey(fn)`, `revealMnemonic()`.
+
+## 6. `WalletButton` reference
+
+Both platforms' `WalletButton` render three states — unsupported, disconnected (connect button + "Use an existing passkey" link), connected (an address pill that opens `WalletDrawer`) — driven by `useStacksPasskeyWallet()`.
+
+### Web (`@toony1908/stacks-passkey-react`)
+
+```ts
+export interface WalletButtonProps {
+  className?: string;
+  style?: CSSProperties;
+  label?: string;
+  /** Background color of the Connect button. Overrides the `--spw-primary`
+   * token for this button only (the drawer's own buttons are unaffected). */
+  color?: string;
+  /** Foreground (icon + label) color of the Connect button. Defaults to a
+   * readable black/white picked from `color`, or the `--spw-primary-fg` token. */
+  textColor?: string;
+  onError?: (e: unknown) => void;
+}
+```
+
+### React Native (`@toony1908/stacks-passkey-react-native`)
+
+```ts
+export interface WalletButtonProps {
+  style?: StyleProp<ViewStyle>;
+  label?: string;
+  /** Background color of the Connect button. Overrides the theme's `primary`
+   * for this button only (the drawer's own buttons are unaffected). */
+  color?: string;
+  /** Foreground (icon + label) color of the Connect button. Defaults to a
+   * readable black/white picked from `color`, or the theme's `primaryFg`. */
+  textColor?: string;
+  theme?: Partial<StacksPasskeyTheme>;
+  onError?: (e: unknown) => void;
+}
+```
+
+On both platforms, `color`/`textColor` only affect the Connect button itself (the wallet drawer's own buttons keep their normal theme colors). `color` accepts any valid CSS color on web, or a `React.ColorValue` on RN. `textColor` is optional: if you set `color` but not `textColor`, a `readableTextColor(bg)` helper auto-picks `'#0a0a0a'` or `'#ffffff'` for contrast — but only when `color` is a 3- or 6-digit hex string; for any other color format (`rgb()`, named colors, etc.) that helper returns `null` and the button falls back to the normal `primaryFg`/`--spw-primary-fg` token, so set `textColor` explicitly if you use a non-hex `color`. The contrast pick uses standard luminance weighting (`0.299r + 0.587g + 0.114b`); luminance `> 0.6` picks a dark foreground, otherwise a light one.
+
+## 7. Theming
+
+`WalletButton` and `WalletDrawer` ship their own styling — no CSS file or stylesheet to import on either platform.
+
+### Web
+
+The components inject a `<style>` tag on mount (`injectStyles()`). The default look is a dark, Xverse-style theme (near-black surfaces, a white primary button, Stacks-orange accents). Override it with these custom properties on `:root` or any ancestor:
+
+```css
+:root {
+  --spw-bg: #101010;            /* drawer / page background */
+  --spw-surface: #1c1c1e;       /* cards, inputs, token rows */
+  --spw-surface-2: #2a2a2d;     /* hover / nested surface */
+  --spw-fg: #ffffff;            /* primary text */
+  --spw-muted: #8e8e93;         /* secondary text */
+  --spw-muted-2: #b4b4b9;
+  --spw-border: rgba(255, 255, 255, 0.12);
+  --spw-primary: #ffffff;       /* primary button background */
+  --spw-primary-fg: #101010;    /* primary button text */
+  --spw-accent: #fc6432;        /* Stacks orange: token icon, focus ring */
+  --spw-accent-2: #ff8656;      /* lighter orange for the token-icon gradient */
+  --spw-danger: #ff453a;
+  --spw-success: #32d74b;
+  --spw-radius-card: 20px;
+  --spw-radius-input: 14px;
+  --spw-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+}
+```
+
+A light palette is already built in — set `colorScheme: 'light'` (or `'auto'` to follow the OS/browser) instead of hand-rolling one. `WalletButton`/`WalletDrawer` set `data-spw-scheme` (from `resolvedColorScheme`) on their root element, which flips every `--spw-*` color token to the light values via a `[data-spw-scheme="light"]` override.
+
+### React Native
+
+`WalletButton`/`WalletDrawer` accept a `theme?: Partial<StacksPasskeyTheme>` prop instead of CSS custom properties; styles are built with `StyleSheet.create`. `StacksPasskeyTheme` fields: `bg`, `surface`, `surface2`, `fg`, `muted`, `muted2`, `border`, `primary`, `primaryFg`, `accent`, `accent2`, `danger`, `success`, `radiusCard`, `radiusInput`, `radiusPill`, `font?`.
+
+`defaultTheme` (dark) and `lightTheme` are exported directly, matching the web dark/light palettes token-for-token. `resolveTheme(scheme: ResolvedColorScheme, override?: Partial<StacksPasskeyTheme>): StacksPasskeyTheme` picks the base (`lightTheme` if `scheme === 'light'`, else `defaultTheme`) and merges a partial override on top — this is what `WalletButton`/`WalletDrawer` use internally with `resolvedColorScheme` and the `theme` prop.
+
+### `colorScheme` and `resolvedColorScheme`
+
+`colorScheme` (`'dark' | 'light' | 'auto'`, config field, default `'dark'`) only picks the *base* palette. `resolvedColorScheme` on the hook's return value (`'light' | 'dark'`) tells you which base is actually in effect once `'auto'` is resolved — `prefers-color-scheme` on web, the live `useColorScheme()` reading on React Native. The `--spw-*` custom properties (web) / `theme` prop (RN) still layer on top of whichever base `colorScheme` resolved to.
+
+## 8. Error handling
+
+```ts
+import { PasskeyWalletError, isPasskeyWalletError } from '@toony1908/stacks-passkey-react'; // or -react-native, or -core
+
+try {
+  await sendStx({ recipient, amount });
+} catch (e) {
+  if (isPasskeyWalletError(e)) {
+    console.log(e.code, e.message); // e.code: WalletErrorCode
+  }
+}
+```
+
+`PasskeyWalletError extends Error` with a `code: WalletErrorCode` field. `isPasskeyWalletError(e: unknown): e is PasskeyWalletError` is the type guard. Defined in `packages/core/src/errors.ts`.
+
+`WalletErrorCode` (the complete, exhaustive union — 12 values):
+
+| Code | When it fires |
+| --- | --- |
+| `PASSKEY_CANCELLED` | The user dismissed/cancelled the WebAuthn or native passkey prompt. |
+| `PRF_UNSUPPORTED` | The authenticator created a passkey but didn't return PRF extension results — the wallet's signing key can't be derived. |
+| `PASSKEY_UNSUPPORTED` | The browser/platform doesn't support WebAuthn/passkeys at all; thrown before ever touching `navigator.credentials` or the native API. |
+| `INSECURE_CONTEXT` | Not served over HTTPS (or `localhost` in dev) — every passkey operation calls `assertSecureContext()` first. |
+| `INSUFFICIENT_BALANCE` | The account doesn't have enough spendable STX to cover the requested send. |
+| `INVALID_ADDRESS` | The recipient address fails validation or doesn't match the configured network's prefix (`SP`/`SM` for mainnet, `ST`/`SN` for testnet). |
+| `INVALID_AMOUNT` | The requested send amount is invalid (e.g. zero, negative, or malformed). |
+| `MEMO_TOO_LONG` | The memo exceeds the 34-byte on-chain memo limit. |
+| `NO_WALLET` | An operation was attempted with no connected/stored wallet. |
+| `NETWORK_ERROR` | A request to the Hiro API failed (network-level, not a rejected broadcast). |
+| `BROADCAST_FAILED` | The signed transaction was rejected at broadcast time by the node/API. |
+| `FEE_TOO_HIGH` | The API's estimated network fee for the transfer exceeded `config.maxFeeMicroStx`. |
+
+## 9. Send / sign and the fee ceiling
+
+Both `sendStx` (validates, signs, broadcasts, returns the txid) and `signStxTransfer` (same validation, returns the serialized signed transaction hex without broadcasting) take `(credentialId, cfg, params: SendStxParams)` at the core level, or `(args: SendStxArgs)` — `{ recipient: string; amount: bigint; memo?: string }`, amount in microSTX — via `useStacksPasskeyWallet()`'s bound versions.
+
+**`maxFeeMicroStx` (default `1_000_000n`, i.e. 1 STX) is a hard ceiling, not a clamp.** If the fee the Stacks API estimates for the transfer exceeds `config.maxFeeMicroStx`, the SDK throws `FEE_TOO_HIGH` and refuses to sign — it does **not** silently reduce the fee to the ceiling and sign that instead. This is deliberate: a clamped-down fee could still broadcast successfully but be too low to ever confirm on a congested network, producing a stuck transaction with no way to bump it from this SDK. Raise `maxFeeMicroStx` if you expect legitimately high fees (e.g. during fee-market congestion).
+
+`feeBufferMicroStx` (default `3_000n`) is a separate, smaller concern: a UX safety margin subtracted from the balance when checking or pre-filling a "send max" amount, so a full-balance send doesn't fail at broadcast for lack of fee headroom. It's a preflight heuristic — the node is the final arbiter of whether the actual fee is sufficient.
+
+## Extension points
+
+SIP-10 tokens, NFTs, arbitrary message signing, and contract calls aren't built in, but are all reachable through `withWalletKey`, which hands your callback a one-shot `{ privateKey, address, mnemonic }`:
+
+```tsx
+import { useStacksPasskeyWallet } from '@toony1908/stacks-passkey-react';
+import { makeContractCall, broadcastTransaction } from '@stacks/transactions';
+
+function useCallMyContract() {
+  const { withWalletKey, network } = useStacksPasskeyWallet();
+
+  return () =>
+    withWalletKey(async ({ privateKey }) => {
+      const tx = await makeContractCall({
+        contractAddress: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+        contractName: 'my-contract',
+        functionName: 'do-thing',
+        functionArgs: [],
+        senderKey: privateKey,
+        network,
+      });
+      const result = await broadcastTransaction({ transaction: tx, network });
+      if ('reason' in result) throw new Error(`Broadcast failed: ${result.reason}`);
+      return result.txid;
+    });
+}
+```
+
+The same `withWalletKey` is available from `useStacksPasskeyWallet()` (scoped to the connected wallet) on either platform, or standalone from the `/core` entry (`withWalletKey(credentialId, config, fn)`) for non-React usage.

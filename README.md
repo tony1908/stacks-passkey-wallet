@@ -1,7 +1,7 @@
 # stacks-wallet-sdk
 
-<!-- Live only once GitHub Pages is enabled for this repo (Settings → Pages → deploy from /docs on main). -->
 📖 **[Documentation](https://tony1908.github.io/stacks-passkey-wallet/)** — full docs site: architecture, install, quickstart, configuration reference, security/threat model, API reference.
+🤖 **For LLMs & agents:** [`llms.txt`](https://tony1908.github.io/stacks-passkey-wallet/llms.txt) (index) · [`llms-full.txt`](https://tony1908.github.io/stacks-passkey-wallet/llms-full.txt) (complete single-file reference).
 
 A monorepo for a **passkey-derived Stacks hot-wallet SDK**, for both **web** and **React Native**, sharing a single framework-agnostic core.
 

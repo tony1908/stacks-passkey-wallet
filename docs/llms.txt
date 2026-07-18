@@ -1,0 +1,26 @@
+# @toony1908/stacks-passkey-wallet
+
+> A passkey (WebAuthn PRF)-derived Stacks hot-wallet SDK for web and React Native, sharing one framework-agnostic core. No browser extension, no seed phrase to write down at setup — the wallet's key material is derived on demand from the user's platform passkey, used once, and discarded.
+
+Three packages share one derivation core: `@toony1908/stacks-passkey-core` (framework-agnostic: config, validation, BIP39/BIP44 derivation, Hiro API balance/transactions — no React, no DOM, no WebAuthn), `@toony1908/stacks-passkey-react` (web: WebAuthn PRF passkeys, a React provider/hooks, a DOM `WalletButton`/`WalletDrawer` UI), and `@toony1908/stacks-passkey-react-native` (React Native: native passkeys via `react-native-passkeys`, the same provider/hooks, an RN `WalletButton`/`WalletDrawer` UI). STX-only today; SIP-10/NFTs/contract calls are reachable via the `withWalletKey` escape hatch. Current version: `0.1.0`. MIT licensed.
+
+## Docs
+
+- [Full reference](https://tony1908.github.io/stacks-passkey-wallet/llms-full.txt): comprehensive single-file documentation — architecture, quick starts, full config reference, API reference, theming, error handling
+- [Docs site](https://tony1908.github.io/stacks-passkey-wallet/): the same content as an interactive HTML page
+
+## Packages
+
+- [@toony1908/stacks-passkey-core](https://www.npmjs.com/package/@toony1908/stacks-passkey-core): framework-agnostic primitives
+- [@toony1908/stacks-passkey-react](https://www.npmjs.com/package/@toony1908/stacks-passkey-react): web SDK (WebAuthn)
+- [@toony1908/stacks-passkey-react-native](https://www.npmjs.com/package/@toony1908/stacks-passkey-react-native): React Native SDK
+
+## Source
+
+- [GitHub repo](https://github.com/tony1908/stacks-passkey-wallet)
+
+## Key concepts
+
+- Security model: WebAuthn/native passkey PRF → BIP39/BIP44 derivation (`m/44'/5757'/0'/0`) → a fresh per-operation signing key via `withWalletKey`, zeroized in a `finally` block — never cached across operations. Only `{ credentialId, addresses }` is ever persisted.
+- One passkey derives both a mainnet and a testnet address at once; `setNetwork` switches at runtime with no new passkey prompt.
+- `maxFeeMicroStx` is a hard fee ceiling: an over-estimate throws `FEE_TOO_HIGH` instead of clamping (which could produce a stuck transaction).
