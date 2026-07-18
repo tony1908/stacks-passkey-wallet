@@ -13,7 +13,25 @@ export interface WalletButtonProps {
   className?: string;
   style?: CSSProperties;
   label?: string;
+  /** Background color of the Connect button. Overrides the `--spw-primary`
+   * token for this button only (the drawer's own buttons are unaffected). */
+  color?: string;
+  /** Foreground (icon + label) color of the Connect button. Defaults to a
+   * readable black/white picked from `color`, or the `--spw-primary-fg` token. */
+  textColor?: string;
   onError?: (e: unknown) => void;
+}
+
+/** Picks a readable black/white foreground for a solid hex background, so a
+ * single `color` prop "just works" without the caller also setting textColor.
+ * Returns null for anything that isn't a 3/6-digit hex (caller falls back). */
+function readableTextColor(bg: string): string | null {
+  const hex = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(bg.trim())?.[1];
+  if (!hex) return null;
+  const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex;
+  const n = parseInt(full, 16);
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.6 ? '#0a0a0a' : '#ffffff';
 }
 
 /** Maps a connect/reconnect failure to human copy for the inline error under
@@ -29,7 +47,7 @@ function connectErrorMessage(e: unknown): string | null {
   return 'Failed to connect';
 }
 
-export function WalletButton({ className, style, label, onError }: WalletButtonProps) {
+export function WalletButton({ className, style, label, color, textColor, onError }: WalletButtonProps) {
   useEffect(() => {
     injectStyles();
   }, []);
@@ -75,9 +93,23 @@ export function WalletButton({ className, style, label, onError }: WalletButtonP
       }
     };
 
+    const connectFg = textColor ?? (color ? readableTextColor(color) : null);
+    // Scoped to this button via inline custom properties, so it overrides the
+    // token only here (the drawer and any other spw-btn-primary keep theirs).
+    const connectBtnStyle = color
+      ? ({ '--spw-primary': color, ...(connectFg ? { '--spw-primary-fg': connectFg } : {}) } as CSSProperties)
+      : undefined;
+
     return (
       <div className={className} style={style} data-spw-scheme={resolvedColorScheme}>
-        <button type="button" className="spw-btn-primary" onClick={handleConnect} disabled={isConnecting} aria-busy={isConnecting}>
+        <button
+          type="button"
+          className="spw-btn-primary"
+          style={connectBtnStyle}
+          onClick={handleConnect}
+          disabled={isConnecting}
+          aria-busy={isConnecting}
+        >
           {isConnecting ? <SpinnerIcon size={16} /> : <FingerprintIcon size={16} />}
           <span>{label ?? 'Connect wallet'}</span>
         </button>

@@ -14,14 +14,33 @@ import { WalletDrawer } from './WalletDrawer';
 export interface WalletButtonProps {
   style?: StyleProp<ViewStyle>;
   label?: string;
+  /** Background color of the Connect button. Overrides the theme's `primary`
+   * for this button only (the drawer's own buttons are unaffected). */
+  color?: string;
+  /** Foreground (icon + label) color of the Connect button. Defaults to a
+   * readable black/white picked from `color`, or the theme's `primaryFg`. */
+  textColor?: string;
   theme?: Partial<StacksPasskeyTheme>;
   onError?: (e: unknown) => void;
 }
 
-export function WalletButton({ style, label, theme: themeOverride, onError }: WalletButtonProps) {
+/** Picks a readable black/white foreground for a solid hex background, so a
+ * single `color` prop "just works" without the caller also setting textColor.
+ * Returns null for anything that isn't a 3/6-digit hex (caller falls back). */
+function readableTextColor(bg: string): string | null {
+  const hex = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(bg.trim())?.[1];
+  if (!hex) return null;
+  const full = hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex;
+  const n = parseInt(full, 16);
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.6 ? '#0a0a0a' : '#ffffff';
+}
+
+export function WalletButton({ style, label, color, textColor, theme: themeOverride, onError }: WalletButtonProps) {
   const { isSupported, isConnected, isConnecting, address, connect, reconnect, resolvedColorScheme } =
     useStacksPasskeyWallet();
   const theme = resolveTheme(resolvedColorScheme, themeOverride);
+  const primaryFg = textColor ?? (color ? readableTextColor(color) : null) ?? theme.primaryFg;
   const styles = createStyles(theme);
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Same silent-failure gap the web WalletButton has: connect/reconnect
@@ -81,12 +100,17 @@ export function WalletButton({ style, label, theme: themeOverride, onError }: Wa
         <Pressable
           onPress={handleConnect}
           disabled={isConnecting}
-          style={({ pressed }) => [styles.btnPrimary, isConnecting && styles.btnDisabled, pressed && styles.pressed]}
+          style={({ pressed }) => [
+            styles.btnPrimary,
+            color ? { backgroundColor: color } : null,
+            isConnecting && styles.btnDisabled,
+            pressed && styles.pressed,
+          ]}
           accessibilityRole="button"
           accessibilityState={{ disabled: isConnecting, busy: isConnecting }}
         >
-          {isConnecting ? <SpinnerIcon size={16} color={theme.primaryFg} /> : <FingerprintIcon size={16} color={theme.primaryFg} />}
-          <Text style={styles.btnPrimaryText}>{label ?? 'Connect wallet'}</Text>
+          {isConnecting ? <SpinnerIcon size={16} color={primaryFg} /> : <FingerprintIcon size={16} color={primaryFg} />}
+          <Text style={[styles.btnPrimaryText, { color: primaryFg }]}>{label ?? 'Connect wallet'}</Text>
         </Pressable>
         <Pressable
           onPress={handleReconnect}

@@ -75,6 +75,33 @@ describe('WalletButton — disconnected', () => {
     expect(screen.getByRole('button', { name: /sign in/i })).toBeInTheDocument();
   });
 
+  it('applies the color prop as --spw-primary and auto-picks a readable --spw-primary-fg on the connect button', () => {
+    vi.mocked(useStacksPasskeyWallet).mockReturnValue(baseWallet);
+    render(<WalletButton color="#fc6432" />);
+
+    const btn = screen.getByRole('button', { name: /connect wallet/i });
+    expect(btn.style.getPropertyValue('--spw-primary')).toBe('#fc6432');
+    // A mid/dark orange -> white text for contrast.
+    expect(btn.style.getPropertyValue('--spw-primary-fg')).toBe('#ffffff');
+  });
+
+  it('lets textColor override the auto-picked foreground', () => {
+    vi.mocked(useStacksPasskeyWallet).mockReturnValue(baseWallet);
+    render(<WalletButton color="#ffffff" textColor="#123456" />);
+
+    const btn = screen.getByRole('button', { name: /connect wallet/i });
+    expect(btn.style.getPropertyValue('--spw-primary')).toBe('#ffffff');
+    expect(btn.style.getPropertyValue('--spw-primary-fg')).toBe('#123456');
+  });
+
+  it('leaves the token untouched when no color prop is given', () => {
+    vi.mocked(useStacksPasskeyWallet).mockReturnValue(baseWallet);
+    render(<WalletButton />);
+
+    const btn = screen.getByRole('button', { name: /connect wallet/i });
+    expect(btn.style.getPropertyValue('--spw-primary')).toBe('');
+  });
+
   it('disables the button and shows a spinner while connecting', () => {
     vi.mocked(useStacksPasskeyWallet).mockReturnValue({ ...baseWallet, isConnecting: true });
     render(<WalletButton />);

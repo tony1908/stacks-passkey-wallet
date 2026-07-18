@@ -155,7 +155,7 @@ The public surface mirrors the web package's `/core` entry (see the web README's
 | Export | Description |
 | --- | --- |
 | `StacksPasskeyProvider`, `useStacksPasskeyWallet`, `useStxBalance`, `useStxTransactions` | Same shape and behavior as web's, **plus** `useStacksPasskeyWallet()`'s `isInitializing: boolean` — RN-only, since the AsyncStorage-backed load it tracks is async (web's `localStorage` read is synchronous, so web has no equivalent hydration flash to expose). See the notes under [Configuration](#configuration). |
-| `WalletButton`, `WalletDrawer` | RN equivalents built on `View`/`Pressable`/`Modal`/`TextInput` instead of DOM elements; accept an optional `theme` prop instead of CSS custom properties. |
+| `WalletButton`, `WalletDrawer` | RN equivalents built on `View`/`Pressable`/`Modal`/`TextInput` instead of DOM elements; accept an optional `theme` prop instead of CSS custom properties. `WalletButton` also takes `color` (+ optional `textColor`, auto-picked for contrast) to recolor just the connect button. |
 | `defaultTheme`, `lightTheme`, `resolveTheme` | The dark/light theme token sets (`StacksPasskeyTheme`) and the function `WalletButton`/`WalletDrawer` use to pick a base (from `resolvedColorScheme`) and merge a partial `theme` override on top. |
 | `isPasskeySupported`, `withWalletKey`, `deriveWalletAddresses`, `sendStx`, `signStxTransfer`, `loadStoredWallet`, `saveStoredWallet`, `clearStoredWallet` | Non-UI primitives for building a custom UI, exported from `passkey.ts`/`session.ts`/`stx.ts`/`storage.ts`. |
 | `truncateAddress`, `explorerTxUrl`, `explorerAddressUrl`, `getAddressError`, `getAmountError`, `getMemoError`, `relativeTime`, `chunkAddress` | Formatting/validation helpers from `src/ui/format.ts`. |
