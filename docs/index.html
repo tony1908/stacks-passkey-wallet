@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>@toony1908/stacks-passkey-wallet — Docs</title>
+<meta name="description" content="Passkey (WebAuthn PRF)-derived Stacks hot-wallet SDK for web and React Native, sharing one core.">
+<script>
+// Set data-theme before first paint (no external calls — localStorage +
+// prefers-color-scheme only) so there's no flash of the wrong palette.
+(function () {
+  try {
+    var saved = localStorage.getItem('spw-docs-theme');
+    var theme = saved || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark');
+    if (theme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  } catch (e) {}
+})();
+</script>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --bg-2: #141414;
+    --surface: #1c1c1e;
+    --surface-2: #242426;
+    --fg: #ffffff;
+    --muted: #8e8e93;
+    --muted-2: #b4b4b9;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-2: rgba(255, 255, 255, 0.16);
+    --accent: #fc6432;
+    --accent-2: #ff8656;
+    --danger: #ff453a;
+    --success: #32d74b;
+    --radius: 16px;
+    --radius-sm: 10px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sidebar-w: 264px;
+
+    /* One-off tokens that aren't part of the light/dark ramp above but still
+       flip per scheme (topbar blur tint, inline/code-block text, the
+       primary-button invert, and syntax-highlight colors). */
+    --topbar-bg: rgba(13, 13, 13, 0.85);
+    --code-inline-fg: #ffd9c7;
+    --callout-fg: #ffe3d4;
+    --btn-primary-bg: #ffffff;
+    --btn-primary-fg: #101010;
+    --btn-primary-bg-hover: #f0f0f0;
+    --tok-k: #ff8656;
+    --tok-s: #9ece6a;
+    --tok-c: #6b6b70;
+    --tok-n: #7dcfff;
+  }
+
+  /* Light scheme — same palette as the SDK's own built-in components
+     ([data-spw-scheme="light"] in packages/react/src/ui/styles.ts), so the
+     docs site and the widgets it documents look like one family. Default
+     source, persistence, and the toggle itself are handled by the inline
+     scripts at the top of <head> and bottom of <body>. */
+  :root[data-theme="light"] {
+    --bg: #ffffff;
+    --bg-2: #fafafa;
+    --surface: #f4f4f6;
+    --surface-2: #e9e9ee;
+    --fg: #0a0a0a;
+    --muted: #8a8a8e;
+    --muted-2: #565659;
+    --border: rgba(0, 0, 0, 0.10);
+    --border-2: rgba(0, 0, 0, 0.16);
+    --accent: #fc6432;
+    --accent-2: #e5551f;
+    --danger: #d70015;
+    --success: #1a7f37;
+
+    --topbar-bg: rgba(255, 255, 255, 0.85);
+    --code-inline-fg: #c2410c;
+    --callout-fg: #8a3010;
+    --btn-primary-bg: #0a0a0a;
+    --btn-primary-fg: #ffffff;
+    --btn-primary-bg-hover: #262626;
+    --tok-k: #c2410c;
+    --tok-s: #1a7f37;
+    --tok-c: #71717a;
+    --tok-n: #0969da;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: var(--bg); scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  a { color: inherit; }
+  h1, h2, h3, h4 { font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; margin: 0 0 12px; }
+  p { margin: 0 0 16px; color: var(--muted-2); }
+  ul, ol { color: var(--muted-2); padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  code:not(pre code) {
+    font-family: var(--mono);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.15em 0.45em;
+    font-size: 0.88em;
+    color: var(--code-inline-fg);
+  }
+
+  /* ---------- layout shell ---------- */
+  .nav-check { position: absolute; opacity: 0; pointer-events: none; }
+  .shell { display: flex; align-items: flex-start; min-height: 100vh; }
+
+  .topbar {
+    display: none;
+    position: sticky; top: 0; z-index: 40;
+    align-items: center; gap: 12px;
+    background: var(--topbar-bg);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 18px;
+  }
+  .burger {
+    display: flex; align-items: center; justify-content: center;
+    width: 36px; height: 36px; border-radius: 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    cursor: pointer; flex-shrink: 0;
+  }
+  .burger span, .burger::before, .burger::after { display: none; }
+  .burger svg { width: 18px; height: 18px; stroke: var(--fg); }
+
+  /* ---------- theme toggle ---------- */
+  .theme-toggle {
+    position: fixed; top: 16px; right: 16px; z-index: 60;
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--surface); border: 1px solid var(--border);
+    color: var(--fg); cursor: pointer; padding: 0;
+  }
+  .theme-toggle:hover { border-color: var(--border-2); }
+  .theme-toggle svg { width: 17px; height: 17px; stroke: currentColor; fill: none; display: none; }
+  .theme-toggle .icon-sun { display: block; }
+  :root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
+  :root[data-theme="light"] .theme-toggle .icon-moon { display: block; }
+  .topbar .brand { font-weight: 800; font-size: 15px; }
+  .topbar .brand .dot { color: var(--accent); }
+
+  .sidebar {
+    width: var(--sidebar-w);
+    flex-shrink: 0;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    overflow-y: auto;
+    background: var(--bg-2);
+    border-right: 1px solid var(--border);
+    padding: 28px 18px 40px;
+  }
+  .sidebar .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 800; font-size: 17px; margin-bottom: 6px; padding: 0 6px;
+  }
+  .sidebar .brand .mark {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: linear-gradient(145deg, var(--accent), var(--accent-2));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 900; color: #14100d; flex-shrink: 0;
+  }
+  .sidebar .tagline {
+    color: var(--muted); font-size: 12.5px; padding: 0 6px 22px;
+    border-bottom: 1px solid var(--border); margin-bottom: 16px;
+  }
+  .sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar nav a {
+    display: block; padding: 8px 10px; border-radius: 8px;
+    color: var(--muted-2); text-decoration: none; font-size: 13.5px; font-weight: 600;
+    transition: background .12s, color .12s;
+  }
+  .sidebar nav a:hover { background: var(--surface); color: var(--fg); }
+  .sidebar .navgroup-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: #5f5f63; margin: 16px 10px 6px; font-weight: 700;
+  }
+  .sidebar .navgroup-label:first-of-type { margin-top: 4px; }
+  .sidebar .badge-row { padding: 6px; margin-top: 18px; }
+  .sidebar .gh-link {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 10px; border-radius: 10px; background: var(--surface);
+    border: 1px solid var(--border); font-size: 12.5px; font-weight: 600;
+    color: var(--muted-2); text-decoration: none;
+  }
+  .sidebar .gh-link:hover { border-color: var(--border-2); color: var(--fg); }
+
+  main.content {
+    flex: 1; min-width: 0;
+    display: flex; justify-content: center;
+    padding: 0 5vw;
+  }
+  .content-inner { width: 100%; max-width: 860px; padding: 56px 0 100px; }
+
+  section { padding-top: 28px; margin-top: -28px; margin-bottom: 64px; }
+  section:last-of-type { margin-bottom: 32px; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 14px;
+  }
+  h2 { font-size: 28px; margin-top: 0; }
+  h2.section-title { margin-bottom: 8px; }
+  .section-sub { margin-bottom: 28px; font-size: 15px; }
+
+  /* ---------- hero ---------- */
+  .hero { padding-top: 8px; }
+  .hero h1 { font-size: 42px; margin-bottom: 16px; }
+  .hero h1 .accent { color: var(--accent); }
+  .hero .pitch { font-size: 17.5px; color: var(--muted-2); max-width: 640px; margin-bottom: 22px; }
+  .hero-callout {
+    background: linear-gradient(160deg, rgba(252,100,50,0.14), rgba(252,100,50,0.03));
+    border: 1px solid rgba(252,100,50,0.35);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    font-size: 14.5px;
+    color: var(--callout-fg);
+    margin-bottom: 26px;
+  }
+  .hero-callout strong { color: var(--fg); }
+  .hero-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 20px; border-radius: 999px; font-size: 14px; font-weight: 700;
+    text-decoration: none; border: 1px solid transparent; cursor: pointer;
+  }
+  .btn-primary { background: var(--btn-primary-bg); color: var(--btn-primary-fg); }
+  .btn-primary:hover { background: var(--btn-primary-bg-hover); }
+  .btn-ghost { background: var(--surface); color: var(--fg); border-color: var(--border); }
+  .btn-ghost:hover { border-color: var(--border-2); }
+  .pill-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 22px; }
+  .pill-tag {
+    font-size: 11.5px; font-weight: 700; color: var(--muted-2);
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 5px 11px; border-radius: 999px; font-family: var(--mono);
+  }
+
+  /* ---------- cards / features ---------- */
+  .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+  }
+  .card .icon {
+    width: 34px; height: 34px; border-radius: 9px; background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
+    font-size: 16px;
+  }
+  .card h4 { font-size: 15px; margin-bottom: 6px; color: var(--fg); }
+  .card p { font-size: 13.5px; margin-bottom: 0; color: var(--muted); }
+
+  /* ---------- architecture ---------- */
+  .diagram {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px 22px; overflow-x: auto;
+    margin-bottom: 20px;
+  }
+  .diagram pre {
+    margin: 0; font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+    color: var(--muted-2); white-space: pre;
+  }
+  .diagram .hl { color: var(--accent-2); }
+  .pkg-table-wrap, .table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); margin-bottom: 20px; }
+  table { border-collapse: collapse; width: 100%; min-width: 560px; font-size: 13.5px; }
+  table.wide { min-width: 720px; }
+  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--bg-2); color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+  tr:last-child td { border-bottom: none; }
+  td { color: var(--muted-2); background: var(--surface); }
+  td code, th code { white-space: nowrap; }
+  .callout-note {
+    background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 14px 16px; font-size: 13.5px; color: var(--muted-2); margin-bottom: 16px;
+  }
+  .callout-note strong { color: var(--fg); }
+  .validated-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(50,215,75,0.1); border: 1px solid rgba(50,215,75,0.35);
+    color: var(--success); padding: 8px 14px; border-radius: 999px; font-size: 13px; font-weight: 600; margin-bottom: 20px;
+  }
+
+  /* ---------- tabs (pure CSS, radio-driven) ---------- */
+  .tabs { margin-bottom: 8px; }
+  .tabs input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; }
+  .tab-labels { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab-labels label {
+    padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 700;
+    background: var(--surface); border: 1px solid var(--border); color: var(--muted-2);
+    cursor: pointer; user-select: none;
+  }
+  .tab-panels { position: relative; }
+  .tab-panel { display: none; }
+
+  #tab-web:checked ~ .tab-labels label[for="tab-web"],
+  #tab-rn:checked ~ .tab-labels label[for="tab-rn"],
+  #tab-web-q:checked ~ .tab-labels label[for="tab-web-q"],
+  #tab-rn-q:checked ~ .tab-labels label[for="tab-rn-q"],
+  #api-react:checked ~ .tab-labels label[for="api-react"],
+  #api-rn:checked ~ .tab-labels label[for="api-rn"],
+  #api-core:checked ~ .tab-labels label[for="api-core"] {
+    background: var(--accent); color: #1a0d05; border-color: var(--accent);
+  }
+  #tab-web:checked ~ .tab-panels #panel-web,
+  #tab-rn:checked ~ .tab-panels #panel-rn,
+  #tab-web-q:checked ~ .tab-panels #panel-web-q,
+  #tab-rn-q:checked ~ .tab-panels #panel-rn-q,
+  #api-react:checked ~ .tab-panels #panel-api-react,
+  #api-rn:checked ~ .tab-panels #panel-api-rn,
+  #api-core:checked ~ .tab-panels #panel-api-core {
+    display: block;
+  }
+
+  /* ---------- code blocks ---------- */
+  .code-block {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; overflow: hidden; margin-bottom: 18px;
+  }
+  .code-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 14px; border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+  }
+  .code-head .lang { font-size: 11px; color: var(--muted); font-family: var(--mono); letter-spacing: 0.03em; }
+  .copy-btn {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11.5px; font-weight: 600; color: var(--muted-2);
+    background: var(--surface-2); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 999px; cursor: pointer;
+  }
+  .copy-btn:hover { color: var(--fg); border-color: var(--border-2); }
+  .copy-btn.copied { color: var(--success); border-color: rgba(50,215,75,0.4); }
+  .code-block pre {
+    margin: 0; padding: 16px 18px; overflow-x: auto;
+    font-family: var(--mono); font-size: 12.8px; line-height: 1.65; color: var(--fg);
+  }
+  .code-block code { background: none; border: none; padding: 0; font-size: inherit; color: inherit; }
+  .tok-k { color: var(--tok-k); }
+  .tok-s { color: var(--tok-s); }
+  .tok-c { color: var(--tok-c); font-style: italic; }
+  .tok-n { color: var(--tok-n); }
+
+  /* ---------- security ---------- */
+  .sec-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 20px; }
+  .sec-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px;
+  }
+  .sec-card h4 { font-size: 14.5px; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+  .sec-card p { font-size: 13.5px; margin-bottom: 0; }
+  .sec-card.warn { border-color: rgba(255,69,58,0.35); background: rgba(255,69,58,0.06); }
+  .sec-card.warn h4 { color: var(--danger); }
+
+  /* ---------- footer ---------- */
+  footer#footer {
+    border-top: 1px solid var(--border); padding-top: 32px; margin-top: 40px;
+  }
+  .footer-links { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+  .footer-links a {
+    text-decoration: none; font-size: 13px; font-weight: 600; color: var(--muted-2);
+    background: var(--surface); border: 1px solid var(--border); padding: 9px 16px; border-radius: 999px;
+  }
+  .footer-links a:hover { color: var(--fg); border-color: var(--border-2); }
+  .footer-fine { font-size: 12.5px; color: #6a6a6e; }
+
+  h3.subhead { font-size: 18px; margin-top: 32px; margin-bottom: 10px; }
+  h3.subhead:first-of-type { margin-top: 0; }
+
+  @media (max-width: 980px) {
+    .card-grid { grid-template-columns: 1fr 1fr; }
+    .sec-grid { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 860px) {
+    .topbar { display: flex; }
+    .sidebar {
+      position: fixed; top: 0; left: 0; z-index: 50;
+      transform: translateX(-100%);
+      transition: transform .2s ease;
+      box-shadow: 20px 0 40px rgba(0,0,0,0.4);
+    }
+    .nav-check:checked ~ .shell .sidebar { transform: translateX(0); }
+    main.content { padding: 0 5vw; }
+    .card-grid { grid-template-columns: 1fr; }
+    .hero h1 { font-size: 32px; }
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 6px; }
+</style>
+</head>
+<body>
+
+<input type="checkbox" id="navcheck" class="nav-check">
+
+<button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle light/dark theme" title="Toggle light/dark theme">
+  <svg class="icon-sun" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+  <svg class="icon-moon" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+</button>
+
+<div class="topbar">
+  <label for="navcheck" class="burger" aria-label="Toggle navigation">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  </label>
+  <div class="brand">stacks-passkey<span class="dot">•</span>wallet</div>
+</div>
+
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><span class="mark">SP</span> stacks-passkey</div>
+    <div class="tagline">Passkey-derived Stacks hot wallet SDK — one core, web &amp; React Native.</div>
+    <nav>
+      <a href="#hero">Overview</a>
+      <a href="#features">Why / Features</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#install">Install</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#configuration">Configuration</a>
+      <a href="#security">Security &amp; Threat Model</a>
+      <a href="#api-reference">API Reference</a>
+      <a href="#react-native-notes">React Native Notes</a>
+      <a href="#extension-points">Extension Points</a>
+      <a href="#footer">Links</a>
+    </nav>
+    <div class="badge-row">
+      <a class="gh-link" href="https://github.com/tony1908/stacks-passkey-wallet" target="_blank" rel="noopener">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        GitHub repo
+      </a>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div class="content-inner">
+
+      <!-- 1. HERO -->
+      <section id="hero" class="hero">
+        <div class="eyebrow">◆ stacks passkey wallet sdk</div>
+        <h1>@toony1908/stacks-passkey-<span class="accent">wallet</span></h1>
+        <p class="pitch">A passkey (WebAuthn PRF)-derived Stacks hot-wallet SDK for <strong style="color:#fff">web and React Native</strong>, sharing one framework-agnostic core. No browser extension, no seed phrase to write down at setup — the wallet's key material is derived on demand from the user's platform passkey, used once, and discarded.</p>
+        <div class="hero-callout">
+          <strong>The headline:</strong> the same synced passkey (iCloud Keychain / Google Password Manager) plus the same <code>prfSalt</code> derives the <strong>same wallet on web and mobile</strong>. Connect on your phone, open the same app in a browser, hit “Use an existing passkey,” and you're looking at the same address — no seed phrase, no manual import.
+        </div>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="#quickstart">Quickstart →</a>
+          <a class="btn btn-ghost" href="#install">Install</a>
+          <a class="btn btn-ghost" href="https://github.com/tony1908/stacks-passkey-wallet" target="_blank" rel="noopener">View on GitHub</a>
+        </div>
+        <div class="pill-tags">
+          <span class="pill-tag">@toony1908/stacks-passkey-core</span>
+          <span class="pill-tag">@toony1908/stacks-passkey-react</span>
+          <span class="pill-tag">@toony1908/stacks-passkey-react-native</span>
+          <span class="pill-tag">MIT</span>
+        </div>
+      </section>
+
+      <!-- 2. WHY / FEATURES -->
+      <section id="features">
+        <div class="eyebrow">Why</div>
+        <h2 class="section-title">Built for one thing: a wallet that just needs a face</h2>
+        <p class="section-sub">No seed phrases at setup, no extension to install, one shared core between web and mobile.</p>
+        <div class="card-grid">
+          <div class="card">
+            <div class="icon">🔑</div>
+            <h4>Passkey-derived, no seed phrase</h4>
+            <p>The wallet's entropy comes from the user's platform passkey + a PRF salt — nothing to write down at setup, nothing to lose on paper.</p>
+          </div>
+          <div class="card">
+            <div class="icon">⏱️</div>
+            <h4>Per-operation key, never stored</h4>
+            <p>The signing key is derived fresh for every send/sign/reveal via <code>withWalletKey</code>, then the raw entropy is zeroized (<code>entropy.fill(0)</code>) in a <code>finally</code> block.</p>
+          </div>
+          <div class="card">
+            <div class="icon">📱</div>
+            <h4>Web + React Native, one core</h4>
+            <p><code>@toony1908/stacks-passkey-core</code> has no React, no DOM, no WebAuthn — both platform packages feed it 32 bytes of PRF entropy and it does the rest.</p>
+          </div>
+          <div class="card">
+            <div class="icon">⚙️</div>
+            <h4>Fully configurable</h4>
+            <p>Every identity, endpoint, derivation, behavior, appearance, and storage knob in <code>PasskeyWalletConfig</code> is overridable — see the full <a href="#configuration">Configuration</a> reference.</p>
+          </div>
+          <div class="card">
+            <div class="icon">🎨</div>
+            <h4>Light/dark UI components included</h4>
+            <p><code>WalletButton</code>/<code>WalletDrawer</code> ship a self-injecting, Xverse-style theme on both platforms — dark by default, with a built-in light palette and <code>'auto'</code> OS-follow via <code>colorScheme</code>. No CSS file or stylesheet to wire up.</p>
+          </div>
+          <div class="card">
+            <div class="icon">🔀</div>
+            <h4>Testnet/mainnet at runtime</h4>
+            <p>Both addresses are derived from one passkey prompt; flipping <code>setNetwork</code> afterwards needs <strong>no new prompt</strong>.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. ARCHITECTURE -->
+      <section id="architecture">
+        <div class="eyebrow">Architecture</div>
+        <h2 class="section-title">Three packages, one derivation core</h2>
+        <p class="section-sub">Each platform does its own passkey/PRF dance, then hands 32 bytes of entropy to the same shared logic.</p>
+
+        <div class="pkg-table-wrap">
+          <table>
+            <thead><tr><th>Package</th><th>What it is</th></tr></thead>
+            <tbody>
+              <tr><td><code>@toony1908/stacks-passkey-core</code></td><td>Framework-agnostic shared primitives — config, validation, BIP39/BIP44 derivation, Hiro balance/transaction fetching. No React, no DOM, no WebAuthn.</td></tr>
+              <tr><td><code>@toony1908/stacks-passkey-react</code></td><td>Web SDK — WebAuthn PRF passkeys, a React provider/hooks, and a DOM <code>WalletButton</code>/<code>WalletDrawer</code> UI.</td></tr>
+              <tr><td><code>@toony1908/stacks-passkey-react-native</code></td><td>React Native SDK — native passkeys via <code>react-native-passkeys</code> (PRF), the same provider/hooks, and an RN <code>WalletButton</code>/<code>WalletDrawer</code> UI.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="diagram">
+<pre>   Web app                          React Native app
+     │  WebAuthn PRF                     │  native passkey PRF
+     │  (navigator.credentials)          │  (react-native-passkeys)
+     ▼                                   ▼
+  <span class="hl">@toony1908/stacks-passkey-react</span>     <span class="hl">@toony1908/stacks-passkey-react-native</span>
+     │                                   │
+     └────────────┬──────────────────────┘
+                   │  same 32 bytes of PRF entropy
+                   ▼
+       <span class="hl">@toony1908/stacks-passkey-core</span>
+       BIP39 mnemonic → BIP32 derive (m/44'/5757'/0'/0) → sign
+                   │
+                   ▼
+              Hiro API (balance, tx history, broadcast)</pre>
+        </div>
+
+        <div class="validated-badge">✓ Validated end-to-end on a real Android device — including a real mainnet STX send.</div>
+        <p>The per-operation key model and entropy zeroization are identical on both platforms: a signing key is never cached across operations. It's derived inside a single <code>withWalletKey(credentialId, config, fn)</code> call — triggering a fresh biometric prompt — handed to <code>fn</code>, and the raw entropy is zeroed the instant <code>fn</code> returns or throws. Only public data (<code>{ credentialId, addresses }</code>) is ever persisted: <code>localStorage</code> on web, <code>AsyncStorage</code> on React Native.</p>
+      </section>
+
+      <!-- 4. INSTALL -->
+      <section id="install">
+        <div class="eyebrow">Install</div>
+        <h2 class="section-title">Pick your platform</h2>
+        <p class="section-sub">Either package pulls in <code>@toony1908/stacks-passkey-core</code> automatically — you never install core directly unless you're integrating a third platform.</p>
+
+        <div class="tabs">
+          <input type="radio" name="install-tabs" id="tab-web" checked>
+          <input type="radio" name="install-tabs" id="tab-rn">
+          <div class="tab-labels">
+            <label for="tab-web">Web app</label>
+            <label for="tab-rn">React Native / Expo app</label>
+          </div>
+          <div class="tab-panels">
+            <div class="tab-panel" id="panel-web">
+              <div class="code-block">
+                <div class="code-head"><span class="lang">sh</span><button class="copy-btn" type="button">Copy</button></div>
+                <pre><code>pnpm add @toony1908/stacks-passkey-react</code></pre>
+              </div>
+              <p>Peer dependencies to install in your app:</p>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Package</th><th>Version</th></tr></thead>
+                  <tbody>
+                    <tr><td><code>react</code></td><td><code>&gt;=18</code></td></tr>
+                    <tr><td><code>react-dom</code></td><td><code>&gt;=18</code></td></tr>
+                    <tr><td><code>@stacks/transactions</code></td><td><code>&gt;=7</code></td></tr>
+                    <tr><td><code>@stacks/wallet-sdk</code></td><td><code>&gt;=7</code></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="callout-note">Requires a <strong>secure context</strong> (HTTPS in production, or <code>localhost</code> in dev) and a browser/authenticator supporting the <strong>WebAuthn PRF extension</strong> — recent Safari/Chrome with a platform passkey.</div>
+            </div>
+            <div class="tab-panel" id="panel-rn">
+              <div class="code-block">
+                <div class="code-head"><span class="lang">sh</span><button class="copy-btn" type="button">Copy</button></div>
+                <pre><code>pnpm add @toony1908/stacks-passkey-react-native
+pnpm add react-native-get-random-values</code></pre>
+              </div>
+              <p>Peer dependencies to install in your app:</p>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Package</th><th>Version</th></tr></thead>
+                  <tbody>
+                    <tr><td><code>react</code></td><td><code>&gt;=18</code></td></tr>
+                    <tr><td><code>react-native</code></td><td><code>&gt;=0.71</code></td></tr>
+                    <tr><td><code>react-native-passkeys</code></td><td><code>&gt;=0.3</code></td></tr>
+                    <tr><td><code>@react-native-async-storage/async-storage</code></td><td><code>&gt;=1</code></td></tr>
+                    <tr><td><code>react-native-svg</code></td><td><code>&gt;=13</code></td></tr>
+                    <tr><td><code>@stacks/transactions</code></td><td><code>&gt;=7</code></td></tr>
+                    <tr><td><code>@stacks/wallet-sdk</code></td><td><code>&gt;=7</code></td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="callout-note">
+                <strong>Before wiring up passkeys:</strong>
+                <ul style="margin:8px 0 0;">
+                  <li><code>react-native-get-random-values</code> isn't a listed peer dependency but is required — import it as the <strong>very first line</strong> of your app's entry point (Hermes has no <code>crypto.getRandomValues</code> by default).</li>
+                  <li><strong>Needs a custom dev client or a bare build — does not work in Expo Go.</strong> <code>react-native-passkeys</code> is a native module.</li>
+                  <li><strong>iOS 15+ / Android API 28+</strong>, with associated domains / Digital Asset Links configured for your passkey relying-party — a domain is required for the rpId (<code>apple-app-site-association</code> / <code>assetlinks.json</code>), it's native-project configuration this SDK can't do for you.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. QUICKSTART -->
+      <section id="quickstart">
+        <div class="eyebrow">Quickstart</div>
+        <h2 class="section-title">Provider + one component</h2>
+        <p class="section-sub">Wrap your app, drop in <code>WalletButton</code> — it renders a connect button, then a pill that opens the full drawer (balance, send, receive, activity, recovery).</p>
+
+        <div class="tabs">
+          <input type="radio" name="quick-tabs" id="tab-web-q" checked>
+          <input type="radio" name="quick-tabs" id="tab-rn-q">
+          <div class="tab-labels">
+            <label for="tab-web-q">Web</label>
+            <label for="tab-rn-q">React Native</label>
+          </div>
+          <div class="tab-panels">
+            <div class="tab-panel" id="panel-web-q">
+              <div class="code-block">
+                <div class="code-head"><span class="lang">tsx</span><button class="copy-btn" type="button">Copy</button></div>
+                <pre><code>import { StacksPasskeyProvider, WalletButton } from '@toony1908/stacks-passkey-react';
+
+export function App() {
+  return (
+    &lt;StacksPasskeyProvider appName="My App" network="testnet"&gt;
+      &lt;WalletButton /&gt;
+    &lt;/StacksPasskeyProvider&gt;
+  );
+}</code></pre>
+              </div>
+              <h3 class="subhead" style="font-size:15px;margin-top:20px;">Headless: hooks only</h3>
+              <div class="code-block">
+                <div class="code-head"><span class="lang">tsx</span><button class="copy-btn" type="button">Copy</button></div>
+                <pre><code>import { useStacksPasskeyWallet, useStxBalance } from '@toony1908/stacks-passkey-react';
+
+function SendPanel() {
+  const { isConnected, connect, address, sendStx } = useStacksPasskeyWallet();
+  const { balanceMicroStx, isLoading } = useStxBalance();
+
+  if (!isConnected) {
+    return &lt;button onClick={() => connect()}&gt;Connect wallet&lt;/button&gt;;
+  }
+
+  async function handleSend() {
+    // amount is in microSTX (1 STX = 1_000_000n microSTX)
+    const txid = await sendStx({ recipient: 'ST2JHG...', amount: 1_000_000n });
+    console.log('broadcast:', txid);
+  }
+
+  return (
+    &lt;div&gt;
+      &lt;p&gt;{address}&lt;/p&gt;
+      &lt;p&gt;{isLoading ? 'Loading…' : `${balanceMicroStx} microSTX`}&lt;/p&gt;
+      &lt;button onClick={handleSend}&gt;Send 1 STX&lt;/button&gt;
+    &lt;/div&gt;
+  );
+}</code></pre>
+              </div>
+            </div>
+            <div class="tab-panel" id="panel-rn-q">
+              <div class="callout-note"><strong>Polyfill first.</strong> Add this as the very first import in your entry point (<code>index.js</code>/<code>App.tsx</code>), above everything else:</div>
+              <div class="code-block">
+                <div class="code-head"><span class="lang">ts</span><button class="copy-btn" type="button">Copy</button></div>
+                <pre><code>import 'react-native-get-random-values';</code></pre>
+              </div>
+              <div class="code-block">
+                <div class="code-head"><span class="lang">tsx</span><button class="copy-btn" type="button">Copy</button></div>
+                <pre><code>import { StacksPasskeyProvider, WalletButton } from '@toony1908/stacks-passkey-react-native';
+
+export default function App() {
+  return (
+    &lt;StacksPasskeyProvider appName="My App" network="testnet"&gt;
+      &lt;WalletButton /&gt;
+    &lt;/StacksPasskeyProvider&gt;
+  );
+}</code></pre>
+              </div>
+              <h3 class="subhead" style="font-size:15px;margin-top:20px;">Headless: hooks only</h3>
+              <div class="code-block">
+                <div class="code-head"><span class="lang">tsx</span><button class="copy-btn" type="button">Copy</button></div>
+                <pre><code>import { useStacksPasskeyWallet, useStxBalance } from '@toony1908/stacks-passkey-react-native';
+import { Text, Button } from 'react-native';
+
+function SendPanel() {
+  const { isConnected, connect, address, sendStx } = useStacksPasskeyWallet();
+  const { balanceMicroStx, isLoading } = useStxBalance();
+
+  if (!isConnected) {
+    return &lt;Button title="Connect wallet" onPress={() => connect()} /&gt;;
+  }
+
+  async function handleSend() {
+    const txid = await sendStx({ recipient: 'ST2JHG...', amount: 1_000_000n });
+    console.log('broadcast:', txid);
+  }
+
+  return (
+    &lt;&gt;
+      &lt;Text&gt;{address}&lt;/Text&gt;
+      &lt;Text&gt;{isLoading ? 'Loading…' : `${balanceMicroStx} microSTX`}&lt;/Text&gt;
+      &lt;Button title="Send 1 STX" onPress={handleSend} /&gt;
+    &lt;/&gt;
+  );
+}</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. CONFIGURATION -->
+      <section id="configuration">
+        <div class="eyebrow">Configuration</div>
+        <h2 class="section-title"><code style="background:none;border:none;color:#fff;padding:0;font-size:1em;">PasskeyWalletConfig</code> — every field</h2>
+        <p class="section-sub">The exact prop shape of <code>StacksPasskeyProvider</code> on every platform, and the argument to <code>resolveConfig</code>. Every field is optional except <code>appName</code> and <code>network</code>. Defined in <code>packages/core/src/config.ts</code>.</p>
+
+        <h3 class="subhead">Identity / WebAuthn</h3>
+        <div class="table-wrap">
+          <table class="wide">
+            <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>appName</code></td><td><code>string</code></td><td><em>required</em></td><td>Shown in the WebAuthn <code>rp.name</code> prompt. Seeds the default <code>userName</code>, <code>userDisplayName</code>, <code>prfSalt</code>, and <code>storageKey</code>.</td></tr>
+              <tr><td><code>network</code></td><td><code>'mainnet' | 'testnet'</code></td><td><em>required</em></td><td>The <strong>initial</strong> active network — the provider tracks it as runtime state (<code>setNetwork</code>) after that.</td></tr>
+              <tr><td><code>rpId</code></td><td><code>string</code></td><td>unset — browser resolves current origin</td><td>WebAuthn relying-party id (<code>rp.id</code>). Leave unset unless passkeys must work across subdomains of one registrable domain.</td></tr>
+              <tr><td><code>userName</code></td><td><code>string</code></td><td><code>appName</code></td><td>WebAuthn <code>user.name</code> — the account label in the OS passkey picker.</td></tr>
+              <tr><td><code>userDisplayName</code></td><td><code>string</code></td><td><code>appName</code></td><td>WebAuthn <code>user.displayName</code> — the friendlier label some platforms show alongside <code>userName</code>.</td></tr>
+              <tr><td><code>prfSalt</code></td><td><code>string</code></td><td><code>`${appName}-stacks-passkey-v1`</code></td><td>PRF extension salt — the "password" that, with the passkey, determines the derived wallet's entropy. <strong>This is the wallet's identity.</strong></td></tr>
+              <tr><td><code>webauthnTimeoutMs</code></td><td><code>number</code></td><td>unset — browser's own timeout</td><td>WebAuthn <code>publicKey.timeout</code> (ms), applied to registration, PRF derivation, and reconnect assertions.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout-note"><strong>⚠ <code>prfSalt</code> is the wallet's identity.</strong> Changing it after users have connected derives a <strong>different</strong> wallet for them. Version it deliberately (e.g. bump the <code>v1</code> suffix only when you intend to migrate everyone to a new wallet).</div>
+
+        <h3 class="subhead">Endpoints</h3>
+        <div class="table-wrap">
+          <table class="wide">
+            <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>apiUrls</code></td><td><code>Partial&lt;Record&lt;'mainnet'|'testnet', string&gt;&gt;</code></td><td><code>{}</code> — falls back to the public Hiro-hosted API (<code>api.hiro.so</code> / <code>api.testnet.hiro.so</code>)</td><td>Per-network API host override, e.g. a self-hosted Stacks node. Any network left unset still falls back to the public default.</td></tr>
+              <tr><td><code>explorer</code></td><td><code>{ txUrl?, addressUrl? }</code></td><td>unset builders fall back to <code>explorer.stacks.co</code></td><td>Block-explorer link builder overrides used by the UI layer (activity rows, address link, post-send success notice).</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="subhead">Derivation</h3>
+        <div class="table-wrap">
+          <table class="wide">
+            <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>accountIndex</code></td><td><code>number</code></td><td><code>0</code></td><td>Which BIP44 account (from the single passkey-derived wallet) to use. Change it to derive a different account from the same passkey without a second passkey.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="subhead">Behavior</h3>
+        <div class="table-wrap">
+          <table class="wide">
+            <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>feeBufferMicroStx</code></td><td><code>bigint</code></td><td><code>3_000n</code></td><td>UX safety margin subtracted from the balance when checking/pre-filling a "send max" amount, so a full-balance send doesn't fail at broadcast for lack of fee headroom.</td></tr>
+              <tr><td><code>maxFeeMicroStx</code></td><td><code>bigint</code></td><td><code>1_000_000n</code> (1 STX)</td><td>Hard ceiling on the network fee <code>sendStx</code>/<code>signStxTransfer</code> will sign. If the API's estimated fee exceeds it, the SDK throws a <code>FEE_TOO_HIGH</code> <code>PasskeyWalletError</code> instead of silently signing it. The fee is <strong>refused, not clamped down</strong> — a clamped-low fee could still broadcast but never confirm (a stuck tx). Raise this for legitimately high-fee sends during fee-market congestion.</td></tr>
+              <tr><td><code>pollIntervalMs</code></td><td><code>number</code></td><td><code>30000</code></td><td>Balance/transaction poll interval (ms) used by <code>useStxBalance</code>/<code>useStxTransactions</code>.</td></tr>
+              <tr><td><code>transactionLimit</code></td><td><code>number</code></td><td><code>20</code></td><td>Default page size for <code>getStxTransactions</code>/<code>useStxTransactions</code> when no per-call <code>limit</code> is given.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="subhead">Appearance</h3>
+        <div class="table-wrap">
+          <table class="wide">
+            <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>colorScheme</code></td><td><code>'dark' | 'light' | 'auto'</code></td><td><code>'dark'</code></td><td>UI color scheme for the built-in components. <code>'auto'</code> follows the OS/browser setting (<code>prefers-color-scheme</code> on web, <code>useColorScheme()</code> on native).</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout-note"><strong>Base vs. override.</strong> <code>colorScheme</code> only picks the base palette (<code>resolvedColorScheme</code>, exposed on the provider's context, tells you which one — <code>'light'</code> or <code>'dark'</code> — is actually in effect for <code>'auto'</code>). The <code>theme</code> prop (React Native) or <code>--spw-*</code> custom properties (web) still layer on top of whichever base is selected. A ready-made <code>lightTheme</code> preset is also importable from <code>@toony1908/stacks-passkey-react-native</code>.</div>
+
+        <h3 class="subhead">Storage</h3>
+        <div class="table-wrap">
+          <table class="wide">
+            <thead><tr><th>Field</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td><code>storage</code></td><td><code>WalletStorage</code> (<code>{ get, set, remove }</code>)</td><td><code>undefined</code> → internal <code>localStorage</code>-backed store with in-memory fallback (web)</td><td>Storage backend for the persisted <code>{ credentialId, addresses }</code> pair. On React Native, storage instead defaults to AsyncStorage via a separate internal module — see <a href="#react-native-notes">React Native notes</a>.</td></tr>
+              <tr><td><code>storageKey</code></td><td><code>string</code></td><td><code>`stacks-passkey-wallet:${appName}`</code></td><td>Storage key for the persisted wallet. Only relevant running multiple wallet instances in one origin.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="callout-note"><strong>🔒 Fixed secure defaults.</strong> <code>residentKey: 'required'</code> and <code>userVerification: 'required'</code> are <strong>not</strong> configurable — they're fixed in the WebAuthn call options because they're what make the wallet phishing- and passkey-loss resistant (a discoverable credential that always demands biometric/PIN verification).</div>
+
+        <h3 class="subhead">Example: custom endpoints + behavior tuning + auto color scheme</h3>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">tsx</span><button class="copy-btn" type="button">Copy</button></div>
+          <pre><code>&lt;StacksPasskeyProvider
+  appName="My App"
+  network="mainnet"
+  apiUrls={{ mainnet: 'https://my-node.example.com' }}
+  pollIntervalMs={10_000}
+  transactionLimit={10}
+  feeBufferMicroStx={5_000n}
+  colorScheme="auto"
+&gt;
+  &lt;WalletButton /&gt;
+&lt;/StacksPasskeyProvider&gt;</code></pre>
+        </div>
+      </section>
+
+      <!-- 7. SECURITY -->
+      <section id="security">
+        <div class="eyebrow">Security</div>
+        <h2 class="section-title">Threat model — read before shipping</h2>
+        <p class="section-sub">This SDK derives a <strong>hot wallet</strong> from a passkey. It's designed to minimize the key's exposure window, not to eliminate every risk.</p>
+
+        <div class="sec-grid">
+          <div class="sec-card">
+            <h4>🔁 Per-operation derivation</h4>
+            <p>The signing key is never generated once and held. Every send/sign/reveal calls <code>withWalletKey(credentialId, cfg, fn)</code>, which derives entropy (triggering a fresh biometric prompt), hands a wallet to <code>fn</code>, and zeroes the entropy (<code>entropy.fill(0)</code>) in a <code>finally</code> block — even if <code>fn</code> throws.</p>
+          </div>
+          <div class="sec-card">
+            <h4>📦 Only public data persisted</h4>
+            <p>Storage holds exactly <code>{ credentialId, addresses: { mainnet, testnet } }</code> — never a key, mnemonic, or entropy. Never cached in memory across operations either: not in a module variable, React state, ref, or context.</p>
+          </div>
+          <div class="sec-card warn">
+            <h4>⚠ Honest JS caveat</h4>
+            <p>Entropy bytes are zeroable — the derived <strong>mnemonic/private-key strings are not</strong> (JS strings are immutable). An XSS payload executing mid-operation (the split second between prompt approval and <code>finally</code>) could theoretically still read that key. Per-operation derivation shrinks this window to milliseconds; it does <strong>not</strong> eliminate it.</p>
+          </div>
+          <div class="sec-card">
+            <h4>🛡 Phishing resistance</h4>
+            <p>WebAuthn binds the passkey to the relying-party id (<code>rpId</code>, defaulting to your origin). A different domain — even a convincing phishing clone — cannot invoke your passkey or derive your wallet's key material.</p>
+          </div>
+        </div>
+
+        <h3 class="subhead">Recommendations for consumers</h3>
+        <ul>
+          <li>Serve your app over <strong>HTTPS</strong> in production (required anyway for WebAuthn's secure-context check).</li>
+          <li>Ship a strict <strong>Content-Security-Policy</strong> — this SDK's own attack surface (XSS reading key material mid-operation) is exactly what a good CSP mitigates.</li>
+          <li><strong>Pin your <code>@stacks/transactions</code> and <code>@stacks/wallet-sdk</code> peer dependency versions.</strong> Duplicate copies in your dependency tree can cause subtle serialization/signing bugs.</li>
+          <li>Audit your full dependency tree periodically — any script running in your page can attempt to read data during a live operation.</li>
+          <li><strong>Treat this as a hot wallet — not for large or long-term balances.</strong></li>
+        </ul>
+      </section>
+
+      <!-- 8. API REFERENCE -->
+      <section id="api-reference">
+        <div class="eyebrow">API Reference</div>
+        <h2 class="section-title">Concise, grouped by entry point</h2>
+        <p class="section-sub">One line each — real signatures, checked against source.</p>
+
+        <div class="tabs">
+          <input type="radio" name="api-tabs" id="api-react" checked>
+          <input type="radio" name="api-tabs" id="api-rn">
+          <input type="radio" name="api-tabs" id="api-core">
+          <div class="tab-labels">
+            <label for="api-react">react (web)</label>
+            <label for="api-rn">react-native</label>
+            <label for="api-core">core (shared)</label>
+          </div>
+          <div class="tab-panels">
+
+            <div class="tab-panel" id="panel-api-react">
+              <div class="table-wrap">
+                <table class="wide">
+                  <thead><tr><th>Export</th><th>Signature</th><th>Description</th></tr></thead>
+                  <tbody>
+                    <tr><td><code>StacksPasskeyProvider</code></td><td><code>(props: PasskeyWalletConfig &amp; { children: ReactNode }) =&gt; JSX.Element</code></td><td>Context provider; wrap your app (or subtree) in it.</td></tr>
+                    <tr><td><code>useStacksPasskeyWallet</code></td><td><code>(): StacksPasskeyContextValue</code></td><td><code>isSupported</code>, <code>isConnected</code>, <code>isConnecting</code>, <code>address?</code>, <code>network</code>, <code>setNetwork()</code>, <code>config</code>, <code>resolvedColorScheme</code>, <code>connect()</code>, <code>reconnect()</code>, <code>disconnect()</code>, <code>sendStx()</code>, <code>signStxTransfer()</code>, <code>withWalletKey()</code>, <code>revealMnemonic()</code>.</td></tr>
+                    <tr><td><code>useStxBalance</code></td><td><code>(): { balanceMicroStx?: bigint; isLoading; error?; refetch() }</code></td><td><strong>Spendable</strong> STX balance in microSTX (total minus locked/stacked). Polls every 30s.</td></tr>
+                    <tr><td><code>useStxTransactions</code></td><td><code>(opts?: { limit? }): { transactions?: WalletTx[]; isLoading; error?; refetch() }</code></td><td>Merged pending (mempool) + confirmed transfers, pending first.</td></tr>
+                    <tr><td><code>WalletButton</code></td><td><code>(props: WalletButtonProps) =&gt; JSX.Element</code></td><td>Self-contained connect button; once connected, renders its own <code>WalletDrawer</code>. Also renders a "Use an existing passkey" link (calls <code>reconnect()</code>).</td></tr>
+                    <tr><td><code>WalletDrawer</code></td><td><code>(props: WalletDrawerProps) =&gt; JSX.Element | null</code></td><td>The slide-over panel (home/send/receive/activity/recovery), portaled to <code>document.body</code>.</td></tr>
+                    <tr><td><code>injectStyles</code></td><td><code>() =&gt; void</code></td><td>Injects the SDK's <code>&lt;style&gt;</code> tag once per document. SSR-safe no-op, idempotent.</td></tr>
+                    <tr><td><code>formatMicroStx</code> / <code>parseStxToMicroStx</code></td><td><code>(amount: bigint) =&gt; string</code> / <code>(input: string) =&gt; bigint | null</code></td><td><code>1_500_000n → "1.500000 STX"</code>, and its inverse.</td></tr>
+                    <tr><td><code>PasskeyWalletError</code> / <code>isPasskeyWalletError</code></td><td><code>class extends Error { code: WalletErrorCode }</code></td><td>The SDK's error type and type guard. <code>code</code> is one of <code>PASSKEY_CANCELLED</code>, <code>PRF_UNSUPPORTED</code>, <code>PASSKEY_UNSUPPORTED</code>, <code>INSECURE_CONTEXT</code>, <code>INSUFFICIENT_BALANCE</code>, <code>INVALID_ADDRESS</code>, <code>INVALID_AMOUNT</code>, <code>MEMO_TOO_LONG</code>, <code>NO_WALLET</code>, <code>NETWORK_ERROR</code>, <code>BROADCAST_FAILED</code>, <code>FEE_TOO_HIGH</code> (estimated fee exceeded <code>config.maxFeeMicroStx</code>).</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p style="font-size:13px;">Also available from the same entry: <code>truncateAddress</code>, <code>explorerTxUrl</code>, <code>explorerAddressUrl</code>, <code>getAddressError</code>, <code>getAmountError</code>, <code>getMemoError</code>, <code>relativeTime</code>, <code>VERSION</code>. A separate <code>@toony1908/stacks-passkey-react/core</code> entry (no React import) re-exports the shared core primitives listed under the <strong>core</strong> tab.</p>
+            </div>
+
+            <div class="tab-panel" id="panel-api-rn">
+              <div class="table-wrap">
+                <table class="wide">
+                  <thead><tr><th>Export</th><th>Description</th></tr></thead>
+                  <tbody>
+                    <tr><td><code>StacksPasskeyProvider</code>, <code>useStacksPasskeyWallet</code>, <code>useStxBalance</code>, <code>useStxTransactions</code></td><td>Same shape and behavior as web's.</td></tr>
+                    <tr><td><code>WalletButton</code>, <code>WalletDrawer</code></td><td>RN equivalents built on <code>View</code>/<code>Pressable</code>/<code>Modal</code>/<code>TextInput</code>; accept an optional <code>theme?: Partial&lt;StacksPasskeyTheme&gt;</code> prop instead of CSS custom properties.</td></tr>
+                    <tr><td><code>defaultTheme</code>, <code>lightTheme</code>, <code>resolveTheme</code></td><td>The dark/light theme token sets and the function (given <code>resolvedColorScheme</code>) that picks a base and merges a partial override on top.</td></tr>
+                    <tr><td><code>isPasskeySupported</code>, <code>withWalletKey</code>, <code>deriveWalletAddresses</code>, <code>sendStx</code>, <code>signStxTransfer</code></td><td>Non-UI primitives for a custom UI (from <code>passkey.ts</code>/<code>session.ts</code>/<code>stx.ts</code>).</td></tr>
+                    <tr><td><code>loadStoredWallet</code>, <code>saveStoredWallet</code>, <code>clearStoredWallet</code></td><td>AsyncStorage-backed persistence for <code>{ credentialId, addresses }</code> (from <code>storage.ts</code>).</td></tr>
+                    <tr><td><code>truncateAddress</code>, <code>explorerTxUrl</code>, <code>explorerAddressUrl</code>, <code>getAddressError</code>, <code>getAmountError</code>, <code>getMemoError</code>, <code>relativeTime</code>, <code>chunkAddress</code></td><td>Formatting/validation helpers from <code>src/ui/format.ts</code>.</td></tr>
+                    <tr><td>Everything from <code>@toony1908/stacks-passkey-core</code></td><td>Re-exported so a consumer only ever depends on this one package.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="tab-panel" id="panel-api-core">
+              <div class="table-wrap">
+                <table class="wide">
+                  <thead><tr><th>Export</th><th>Signature</th><th>Description</th></tr></thead>
+                  <tbody>
+                    <tr><td><code>resolveConfig</code></td><td><code>(cfg: PasskeyWalletConfig) =&gt; ResolvedConfig</code></td><td>Fills in all the defaults documented under Configuration.</td></tr>
+                    <tr><td><code>registerPasskey</code></td><td><code>(cfg: ResolvedConfig) =&gt; Promise&lt;string&gt;</code></td><td>Creates a new passkey with PRF requested; returns a base64url <code>credentialId</code>. Throws <code>PASSKEY_UNSUPPORTED</code>/<code>PRF_UNSUPPORTED</code>.</td></tr>
+                    <tr><td><code>withWalletKey</code></td><td><code>&lt;T&gt;(credentialId, cfg, fn: (wallet: DerivedWallet) =&gt; Promise&lt;T&gt;) =&gt; Promise&lt;T&gt;</code></td><td>The per-operation signing primitive — see <a href="#security">Security</a>. <code>DerivedWallet</code> is <code>{ mnemonic, privateKey, address }</code>.</td></tr>
+                    <tr><td><code>sendStx</code></td><td><code>(credentialId, cfg, params: SendStxParams) =&gt; Promise&lt;string&gt;</code></td><td>Validates, derives the key, signs an STX transfer, broadcasts it, returns the txid.</td></tr>
+                    <tr><td><code>signStxTransfer</code></td><td><code>(credentialId, cfg, params: SendStxParams) =&gt; Promise&lt;string&gt;</code></td><td>Same, but returns the serialized signed transaction hex and never broadcasts.</td></tr>
+                    <tr><td><code>getStxBalance</code></td><td><code>(address, cfg) =&gt; Promise&lt;bigint&gt;</code></td><td><strong>Spendable</strong> STX balance in microSTX (<code>balance - locked</code>) from the Hiro API.</td></tr>
+                    <tr><td><code>getStxTransactions</code></td><td><code>(address, cfg, opts?: { limit? }) =&gt; Promise&lt;WalletTx[]&gt;</code></td><td>Pending mempool transfers followed by confirmed ones.</td></tr>
+                    <tr><td><code>isValidStacksAddress</code>, <code>assertValidRecipient</code>, <code>memoByteLength</code>, <code>assertValidMemo</code></td><td>validators</td><td><code>assertValidRecipient</code> also checks the address prefix matches the configured network; <code>assertValidMemo</code> enforces the 34-byte on-chain memo limit.</td></tr>
+                    <tr><td><code>walletFromEntropy</code></td><td><code>(entropy: Uint8Array, network, accountIndex?) =&gt; Promise&lt;DerivedWallet&gt;</code></td><td>32 bytes of entropy → BIP39 mnemonic → BIP32 derive (<code>m/44'/5757'/0'/0</code>) → <code>{ mnemonic, privateKey, address }</code>. No <code>crypto.subtle</code> — works in Hermes.</td></tr>
+                    <tr><td><code>addressesFromPrivateKey</code></td><td><code>(privateKey: string) =&gt; { mainnet: string; testnet: string }</code></td><td>One private key, both network addresses (same key, different version byte).</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- 9. REACT NATIVE NOTES -->
+      <section id="react-native-notes">
+        <div class="eyebrow">React Native</div>
+        <h2 class="section-title">Device-validated specifics</h2>
+        <p class="section-sub">What changed to make native passkeys actually work end-to-end, found by running the flow on a real Android device.</p>
+        <ul>
+          <li><strong>Native <code>get()</code> needs an explicit <code>rpId</code>.</strong> Unlike the browser (which defaults to the page origin), <code>derivePrfEntropy</code> and <code>reconnectWallet</code>'s native assertion calls must pass <code>rpId</code> directly.</li>
+          <li><strong>PRF-at-create with a <code>get()</code> fallback.</strong> <code>registerPasskey</code> evaluates PRF during <code>create()</code> (the Android Credential Manager pattern) and returns <code>{ credentialId, entropy }</code>, so <code>connect()</code> can skip a follow-up <code>get()</code> when the platform supports it — falling back to <code>derivePrfEntropy</code>'s <code>get()</code> otherwise.</li>
+          <li><strong>Hermes-safe derivation.</strong> <code>walletFromEntropy</code> derives the STX key directly via <code>@scure/bip39</code> + <code>@scure/bip32</code> (<code>m/44'/5757'/0'/0</code>) instead of <code>@stacks/wallet-sdk</code>'s <code>generateWallet</code>, which calls <code>encryptMnemonic</code> and needs Web Crypto's <code>crypto.subtle</code> — unavailable in Hermes. Same derived address either way (pinned snapshot test).</li>
+          <li><strong>Dual ESM+CJS build for Metro.</strong> Both <code>@toony1908/stacks-passkey-core</code> and <code>@toony1908/stacks-passkey-react-native</code> ship <code>dist/index.js</code> (ESM) and <code>dist/index.cjs</code> (CJS) with a <code>react-native</code> field, so Metro's resolver gets a build it can bundle.</li>
+          <li><strong>AsyncStorage by default.</strong> Unlike web's synchronous <code>localStorage</code>, storage here is async (<code>@react-native-async-storage/async-storage</code>) — there's necessarily one brief render where <code>isConnected</code> is <code>false</code> before the mount effect resolves.</li>
+        </ul>
+      </section>
+
+      <!-- 10. EXTENSION POINTS -->
+      <section id="extension-points">
+        <div class="eyebrow">Extension Points</div>
+        <h2 class="section-title">STX-only today — everything else via <code style="background:none;border:none;color:#fff;padding:0;font-size:1em;">withWalletKey</code></h2>
+        <p class="section-sub">SIP-10 tokens, NFTs, arbitrary message signing, and contract calls aren't built in, but they're all reachable through <code>withWalletKey</code>, which hands your callback a one-shot <code>{ privateKey, address, mnemonic }</code>.</p>
+        <div class="code-block">
+          <div class="code-head"><span class="lang">tsx</span><button class="copy-btn" type="button">Copy</button></div>
+          <pre><code>import { useStacksPasskeyWallet } from '@toony1908/stacks-passkey-react';
+import { makeContractCall, broadcastTransaction } from '@stacks/transactions';
+
+function useCallMyContract() {
+  const { withWalletKey, network } = useStacksPasskeyWallet();
+
+  return () =&gt;
+    withWalletKey(async ({ privateKey }) =&gt; {
+      const tx = await makeContractCall({
+        contractAddress: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+        contractName: 'my-contract',
+        functionName: 'do-thing',
+        functionArgs: [],
+        senderKey: privateKey,
+        network,
+      });
+      const result = await broadcastTransaction({ transaction: tx, network });
+      if ('reason' in result) throw new Error(`Broadcast failed: ${result.reason}`);
+      return result.txid;
+    });
+}</code></pre>
+        </div>
+        <p>The same <code>withWalletKey</code> is available from <code>useStacksPasskeyWallet()</code> (scoped to the connected wallet) on either platform, or standalone from the <code>/core</code> entry (<code>withWalletKey(credentialId, config, fn)</code>) for non-React usage.</p>
+      </section>
+
+      <!-- 11. FOOTER -->
+      <footer id="footer">
+        <div class="eyebrow">Links</div>
+        <h2 class="section-title" style="font-size:20px;">Repo &amp; package docs</h2>
+        <div class="footer-links">
+          <a href="https://github.com/tony1908/stacks-passkey-wallet" target="_blank" rel="noopener">GitHub repo</a>
+          <a href="https://github.com/tony1908/stacks-passkey-wallet/blob/main/packages/core/README.md" target="_blank" rel="noopener">core README</a>
+          <a href="https://github.com/tony1908/stacks-passkey-wallet/blob/main/packages/react/README.md" target="_blank" rel="noopener">react README</a>
+          <a href="https://github.com/tony1908/stacks-passkey-wallet/blob/main/packages/react-native/README.md" target="_blank" rel="noopener">react-native README</a>
+        </div>
+        <p class="footer-fine">Licensed under MIT. This page is a static, self-contained document — no external requests, no tracking.</p>
+      </footer>
+
+    </div>
+  </main>
+</div>
+
+<script>
+(function () {
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  var KEYWORDS = /\b(import|export|from|const|let|var|function|async|await|return|new|throw|if|else|type|interface|extends|implements|class|public|private|readonly|void|true|false|null|undefined|default|as|typeof|instanceof|for|of|in)\b/;
+  var TOKEN_RE = new RegExp(
+    '(//[^\\n]*)' +                       // 1 comment
+    '|(`(?:\\\\.|[^`\\\\])*`)' +           // 2 template string
+    "|('(?:\\\\.|[^'\\\\])*')" +           // 3 single-quoted string
+    '|("(?:\\\\.|[^"\\\\])*")' +           // 4 double-quoted string
+    '|(\\b\\d[\\d_]*n?\\b)' +              // 5 number
+    '|' + KEYWORDS.source,                 // 6 keyword
+    'g'
+  );
+
+  function highlight(str) {
+    var out = '', last = 0, m;
+    TOKEN_RE.lastIndex = 0;
+    while ((m = TOKEN_RE.exec(str))) {
+      out += escapeHtml(str.slice(last, m.index));
+      var cls = m[1] ? 'tok-c' : (m[2] || m[3] || m[4]) ? 'tok-s' : m[5] ? 'tok-n' : 'tok-k';
+      out += '<span class="' + cls + '">' + escapeHtml(m[0]) + '</span>';
+      last = TOKEN_RE.lastIndex;
+    }
+    out += escapeHtml(str.slice(last));
+    return out;
+  }
+
+  document.querySelectorAll('.code-block pre code').forEach(function (el) {
+    el.innerHTML = highlight(el.textContent);
+  });
+
+  document.querySelectorAll('.copy-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var codeEl = btn.closest('.code-block').querySelector('code');
+      var text = codeEl ? codeEl.textContent : '';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      }
+      var original = btn.textContent;
+      btn.textContent = 'Copied';
+      btn.classList.add('copied');
+      setTimeout(function () {
+        btn.textContent = original;
+        btn.classList.remove('copied');
+      }, 1200);
+    });
+  });
+
+  // Close mobile nav when a link is tapped.
+  var navcheck = document.getElementById('navcheck');
+  document.querySelectorAll('.sidebar nav a').forEach(function (a) {
+    a.addEventListener('click', function () {
+      if (navcheck) navcheck.checked = false;
+    });
+  });
+
+  // Theme toggle: flips data-theme on <html> and persists the choice.
+  // Default (no saved choice) comes from prefers-color-scheme, applied
+  // before paint by the inline script in <head>.
+  var themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', function () {
+      var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+      if (isLight) {
+        document.documentElement.removeAttribute('data-theme');
+      } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+      try { localStorage.setItem('spw-docs-theme', isLight ? 'dark' : 'light'); } catch (e) {}
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

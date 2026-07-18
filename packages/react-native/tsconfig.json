@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Typecheck the sibling workspace package straight from source, so this
+    // doesn't require `packages/core` to be built first (its published
+    // `exports` map only points at `dist`).
+    "paths": {
+      "@toony1908/stacks-passkey-core": ["../core/src/index.ts"],
+      "@toony1908/stacks-passkey-core/react": ["../core/src/react.ts"]
+    },
+    // No jsdom/testing-library here (see vitest.config.ts — this package has
+    // no jsdom-based tests, only plain-node unit tests plus tsc for the UI
+    // layer), so drop the base's `@testing-library/jest-dom` type reference.
+    "types": ["node", "vitest/globals"]
+    // `lib` is inherited from the base config (includes DOM), which is
+    // needed here even though this is React Native: RN polyfills `fetch`,
+    // `crypto.getRandomValues`, and `TextEncoder`/`TextDecoder` at runtime,
+    // and `react-native-passkeys`'s own types reference a couple of DOM lib
+    // types (e.g. `CredentialCreationOptions`).
+  },
+  "include": ["src", "tsup.config.ts", "vitest.config.ts"]
+}

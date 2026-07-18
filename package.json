@@ -1,0 +1,13 @@
+{
+  "name": "@toony1908/stacks-passkey-monorepo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}

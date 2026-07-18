@@ -1,0 +1,82 @@
+{
+  "name": "@toony1908/stacks-passkey-core",
+  "version": "0.1.0",
+  "description": "Framework-agnostic core primitives (config, validation, BIP39/BIP44 derivation, balance/transaction fetching, send/sign) for the Stacks passkey wallet SDK. No DOM, no WebAuthn; the main entry has no React either — optional React data hooks live behind the ./react subpath.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Antonio Santiago",
+  "homepage": "https://github.com/tony1908/stacks-passkey-wallet#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tony1908/stacks-passkey-wallet.git",
+    "directory": "packages/core"
+  },
+  "bugs": {
+    "url": "https://github.com/tony1908/stacks-passkey-wallet/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "react-native": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm run build"
+  },
+  "keywords": [
+    "stacks",
+    "passkey",
+    "wallet",
+    "sdk",
+    "bip39"
+  ],
+  "dependencies": {
+    "@scure/bip32": "^1.1.3",
+    "@scure/bip39": "^2.2.0"
+  },
+  "peerDependencies": {
+    "@stacks/transactions": ">=7",
+    "@stacks/wallet-sdk": ">=7",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@stacks/transactions": "^7.3.1",
+    "@stacks/wallet-sdk": "^7.5.0",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.13",
+    "react": "^19.2.4",
+    "tsup": "^8.3.0",
+    "typescript": "~5.8.2",
+    "vitest": "^2.1.9"
+  }
+}

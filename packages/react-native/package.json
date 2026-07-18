@@ -1,0 +1,84 @@
+{
+  "name": "@toony1908/stacks-passkey-react-native",
+  "version": "0.1.0",
+  "description": "React Native SDK for a native-passkey (PRF)-derived Stacks hot wallet: connect, send STX, sign transactions, and recover, with per-operation FaceID/fingerprint/biometric auth.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Antonio Santiago",
+  "homepage": "https://github.com/tony1908/stacks-passkey-wallet#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tony1908/stacks-passkey-wallet.git",
+    "directory": "packages/react-native"
+  },
+  "bugs": {
+    "url": "https://github.com/tony1908/stacks-passkey-wallet/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "react-native": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm run build"
+  },
+  "keywords": [
+    "stacks",
+    "passkey",
+    "webauthn",
+    "prf",
+    "wallet",
+    "react-native",
+    "sdk",
+    "hot-wallet",
+    "bip39"
+  ],
+  "dependencies": {
+    "@toony1908/stacks-passkey-core": "workspace:^"
+  },
+  "peerDependencies": {
+    "@react-native-async-storage/async-storage": ">=1",
+    "@stacks/transactions": ">=7",
+    "@stacks/wallet-sdk": ">=7",
+    "react": ">=18",
+    "react-native": ">=0.71",
+    "react-native-passkeys": ">=0.3",
+    "react-native-svg": ">=13"
+  },
+  "devDependencies": {
+    "@react-native-async-storage/async-storage": "^3.1.1",
+    "@simplewebauthn/typescript-types": "^8.3.4",
+    "@stacks/transactions": "^7.3.1",
+    "@stacks/wallet-sdk": "^7.5.0",
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.13",
+    "react": "^18.3.1",
+    "react-native": "^0.76.9",
+    "react-native-passkeys": "^0.4.1",
+    "react-native-svg": "^15.15.5",
+    "tsup": "^8.3.0",
+    "typescript": "~5.8.2",
+    "vitest": "^2.1.9"
+  }
+}

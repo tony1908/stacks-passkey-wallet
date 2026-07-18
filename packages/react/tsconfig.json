@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Typecheck the sibling workspace package straight from source, so this
+    // doesn't require `packages/core` to be built first (its published
+    // `exports` map only points at `dist`).
+    "paths": {
+      "@toony1908/stacks-passkey-core": ["../core/src/index.ts"],
+      "@toony1908/stacks-passkey-core/react": ["../core/src/react.ts"]
+    }
+  },
+  "include": ["src", "vitest.setup.ts", "tsup.config.ts", "vitest.config.ts"]
+}
