@@ -1,6 +1,6 @@
 # @toony1908/stacks-passkey-wallet — Full Reference
 
-Version: 0.1.0. License: MIT. Source: https://github.com/tony1908/stacks-passkey-wallet
+Version: 0.2.0. License: MIT. Source: https://github.com/tony1908/stacks-passkey-wallet
 Docs site: https://tony1908.github.io/stacks-passkey-wallet/
 
 ## 1. Overview

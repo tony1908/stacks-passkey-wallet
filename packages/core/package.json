@@ -1,6 +1,6 @@
 {
   "name": "@toony1908/stacks-passkey-core",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Framework-agnostic core primitives (config, validation, BIP39/BIP44 derivation, balance/transaction fetching, send/sign) for the Stacks passkey wallet SDK. No DOM, no WebAuthn; the main entry has no React either — optional React data hooks live behind the ./react subpath.",
   "type": "module",
   "license": "MIT",

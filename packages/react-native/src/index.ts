@@ -12,7 +12,7 @@
 // See src/setup.ts for the full explanation of why this isn't done for you
 // inside the library.
 
-export const VERSION = '0.0.0';
+export const VERSION = '0.2.0';
 
 export { StacksPasskeyProvider } from './StacksPasskeyProvider';
 export type { StacksPasskeyProviderProps } from './StacksPasskeyProvider';

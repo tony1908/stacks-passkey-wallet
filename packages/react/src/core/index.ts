@@ -3,7 +3,7 @@
 // web-only passkey/session/storage primitives that stay in this package
 // (they use WebAuthn/localStorage, which have no meaning off the web).
 
-export const VERSION = '0.0.0';
+export const VERSION = '0.2.0';
 
 export type {
   StacksNetwork,

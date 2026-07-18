@@ -1,6 +1,6 @@
 {
   "name": "@toony1908/stacks-passkey-react",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reusable React SDK for a WebAuthn passkey (PRF)-derived Stacks hot wallet: connect, send STX, sign transactions, and recover, with per-operation FaceID/fingerprint auth.",
   "type": "module",
   "license": "MIT",
